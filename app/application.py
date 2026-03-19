@@ -78,9 +78,27 @@ def create_app() -> FastAPI:
 
             # 登录态下对敏感写操作做同源校验，降低 CSRF 风险
             if path.startswith("/api") and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-                if origin and origin_base and origin != origin_base:
-                    return JSONResponse({"detail": "非法来源请求"}, status_code=403)
-                if referer and origin_base and not referer.startswith(origin_base):
+                # 预先构建可能的本地来源基准
+                # 优先信任 Host 头部，因为它是浏览器根据访问地址自动生成的
+                if not origin_base and host:
+                    origin_base = f"{request.url.scheme}://{host}"
+
+                is_origin_ok = True
+                if origin and origin_base:
+                    # 去除末尾斜杠进行比较
+                    if origin.rstrip("/") != origin_base.rstrip("/"):
+                        is_origin_ok = False
+                
+                is_referer_ok = True
+                if referer and origin_base:
+                    if not referer.startswith(origin_base):
+                        is_referer_ok = False
+
+                if not is_origin_ok or not is_referer_ok:
+                    logger.warning(
+                        "[security] 拦截到疑似跨站请求: path=%s, method=%s, origin=%s, referer=%s, expected_base=%s",
+                        path, request.method, origin, referer, origin_base
+                    )
                     return JSONResponse({"detail": "非法来源请求"}, status_code=403)
 
         response = await call_next(request)
