@@ -5,10 +5,10 @@ services:
       dockerfile: docker/Dockerfile
     container_name: fb-manager
     ports:
-      # 限制只有宿主机本地可以访问容器
-      - "127.0.0.1:8000:8000"
+      # 允许外部通过服务器 IP 访问
+      - "8000:8000"
     environment:
-      # 使用不含特殊字符的稳健强密码，避免环境变量解析冲突
+      # 使用不含特殊字符的稳健强密码
       - ADMIN_PASSWORD=GeminiManager2026
       - TZ=Asia/Shanghai
     volumes:
