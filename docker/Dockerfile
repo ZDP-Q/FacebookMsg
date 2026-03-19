@@ -33,8 +33,11 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
 
+# 确保启动脚本有执行权限
+RUN chmod +x docker/start.sh
+
 # 暴露端口
 EXPOSE 8000
 
-# 启动脚本：先重置密码，再启动服务
-CMD ["sh", "-c", "python reset_pwd.py && python main.py"]
+# 使用 JSON 数组格式的 CMD 以确保能正确响应信号
+CMD ["./docker/start.sh"]
