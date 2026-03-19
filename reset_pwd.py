@@ -46,8 +46,12 @@ def reset_password():
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = 1
         """, (pw_hash, salt, PBKDF2_ITERATIONS))
+        
+        # 成功重置密码后，清空所有登录尝试和锁定记录
+        conn.execute("DELETE FROM admin_login_attempts")
+        
         conn.commit()
-        print("成功: 管理员密码已重置！")
+        print("成功: 管理员密码已重置，登录锁定已解除！")
     except Exception as e:
         print(f"失败: {e}")
     finally:
