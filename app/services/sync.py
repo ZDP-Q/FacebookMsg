@@ -50,8 +50,6 @@ class SyncService:
             logger.warning("[sync] all %s fetched posts were filtered out! Please check if canonical_page_id=%s is correct.", 
                            len(raw_posts), canonical_page_id)
 
-        skipped_posts = len(raw_posts) - len(posts)
-
         for post in posts:
             try:
                 media_info = await self.facebook.fetch_post_media_info(post["id"])

@@ -1,9 +1,7 @@
 import uvicorn
 
 import logging
-import os
 from pathlib import Path
-import uvicorn
 from app.application import create_app
 
 # 确保日志目录存在

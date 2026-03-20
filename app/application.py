@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from urllib.parse import quote
@@ -19,9 +20,6 @@ from app.services.monitor import MonitorService
 
 
 logger = logging.getLogger("uvicorn.error")
-
-
-import asyncio
 
 
 def _is_public_path(path: str) -> bool:

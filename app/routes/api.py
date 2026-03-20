@@ -178,6 +178,25 @@ async def update_model_api(payload: ModelConfigPayload):
     return {"status": "success"}
 
 
+@router.post("/settings/model/test")
+async def test_model_api(payload: ModelConfigPayload):
+    from app.config import AppConfig
+    # Use the payload values instead of saved config for testing
+    temp_config = AppConfig(
+        ai_api_base_url=payload.ai_api_base_url.strip(),
+        ai_api_key=payload.ai_api_key.strip(),
+        ai_model=payload.ai_model.strip(),
+        ai_system_prompt=payload.ai_system_prompt.strip(),
+        # Other fields don't matter for this test
+    )
+    ai_service = AIReplyService(temp_config)
+    try:
+        result = await ai_service.test_connection()
+        return {"status": "success", "message": result}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/admin/change-password")
 async def change_admin_password(payload: ChangePasswordPayload):
     auth = get_admin_auth()

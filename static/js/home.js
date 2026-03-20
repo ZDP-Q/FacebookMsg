@@ -277,6 +277,36 @@ document.getElementById('btn-model-save')?.addEventListener('click', async () =>
     }
 });
 
+document.getElementById('btn-model-test')?.addEventListener('click', async () => {
+    const payload = {
+        ai_api_base_url: (document.getElementById('model-base-url')?.value || '').trim(),
+        ai_api_key: (document.getElementById('model-api-key')?.value || '').trim(),
+        ai_model: (document.getElementById('model-name')?.value || '').trim(),
+        ai_system_prompt: (document.getElementById('model-system-prompt')?.value || '').trim(),
+    };
+
+    const btn = document.getElementById('btn-model-test');
+    btn.disabled = true;
+    btn.textContent = '测试中...';
+    showAlert('正在测试 AI 连接，请稍候...', 'info');
+
+    try {
+        const r = await fetch('/api/settings/model/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const res = await r.json();
+        if (!r.ok) throw new Error(res.detail || '测试失败');
+        showAlert(res.message || '连接成功！', 'success');
+    } catch (e) {
+        showAlert(e.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '测试配置';
+    }
+});
+
 document.getElementById('btn-change-password')?.addEventListener('click', async () => {
     const oldPassword = (document.getElementById('admin-old-password')?.value || '').trim();
     const newPassword = (document.getElementById('admin-new-password')?.value || '').trim();

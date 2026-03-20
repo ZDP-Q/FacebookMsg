@@ -167,3 +167,36 @@ class AIReplyService:
         if not content:
             raise RuntimeError("AI 接口返回了空内容")
         return content
+
+    async def test_connection(self) -> str:
+        """Tests the connection to the LLM with a simple prompt."""
+        if not self.config.ai_api_base_url or not self.config.ai_api_key or not self.config.ai_model:
+            raise RuntimeError("请先填写 AI_API_BASE_URL、AI_API_KEY 和 AI_MODEL")
+
+        payload = {
+            "model": self.config.ai_model,
+            "messages": [
+                {"role": "user", "content": "hi"},
+            ],
+            "max_tokens": 5,
+        }
+
+        headers = {
+            "Authorization": f"Bearer {self.config.ai_api_key}",
+            "Content-Type": "application/json",
+        }
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                response = await client.post(self._chat_completions_url(), headers=headers, json=payload)
+                if response.status_code >= 400:
+                    detail = response.text
+                    try:
+                        detail = response.json().get("error", {}).get("message", detail)
+                    except ValueError:
+                        pass
+                    raise RuntimeError(f"连接失败 ({response.status_code}): {detail}")
+
+                return "连接成功！AI 已响应。"
+            except httpx.RequestError as exc:
+                raise RuntimeError(f"网络请求失败: {exc}") from exc
