@@ -23,22 +23,22 @@
         {% for m in monitors %}
         <div class="monitor-card" id="mc-{{ m.id }}">
             <div class="monitor-card-header">
-                <div class="monitor-status-dot {% if m.enabled %}active{% else %}paused{% endif %}"></div>
+                <div class="monitor-status-dot {% if m.enabled %}active{% else %}paused{% endif %}" id="dot-{{ m.id }}"></div>
                 <div class="monitor-meta">
                     <div class="monitor-post-excerpt">{{ m.post_message or '（无内容）' }}</div>
                     <div class="monitor-post-id">{{ m.post_id }}</div>
                     <div class="monitor-tags">
-                        <span class="badge {% if m.enabled %}badge-success{% else %}badge-neutral{% endif %}">
+                        <span class="badge {% if m.enabled %}badge-success{% else %}badge-neutral{% endif %}" id="badge-enabled-{{ m.id }}">
                             <span class="badge-dot"></span>
-                            {% if m.enabled %}监控中{% else %}已暂停{% endif %}
+                            <span id="enabled-text-{{ m.id }}">{% if m.enabled %}监控中{% else %}已暂停{% endif %}</span>
                         </span>
-                        <span class="badge badge-info">每 {{ m.interval_seconds }}s</span>
+                        <span class="badge badge-info" id="badge-interval-{{ m.id }}">每 {{ m.interval_seconds }}s</span>
                     </div>
                 </div>
                 <div class="monitor-actions">
                     <button class="btn btn-secondary btn-xs" onclick="toggleMonitorCard({{ m.id }})">详情</button>
                     <button class="btn btn-secondary btn-xs" onclick="runMonitor({{ m.id }}, this)">立即执行</button>
-                    <button class="btn btn-secondary btn-xs" onclick="toggleMonitorEnabled({{ m.id }}, {{ m.enabled }}, this)">
+                    <button class="btn btn-secondary btn-xs" id="btn-enabled-{{ m.id }}" data-enabled="{{ 1 if m.enabled else 0 }}" onclick="toggleMonitorEnabled({{ m.id }}, this)">
                         {% if m.enabled %}暂停{% else %}启用{% endif %}
                     </button>
                     <button class="btn btn-danger btn-xs" onclick="deleteMonitor({{ m.id }})">删除</button>
@@ -48,11 +48,11 @@
                 <div class="monitor-detail-grid">
                     <div class="monitor-detail-item">
                         <label>上次执行</label>
-                        <div class="val">{{ m.last_run_at or '从未' }}</div>
+                        <div class="val" id="last-run-{{ m.id }}">{{ m.last_run_at or '从未' }}</div>
                     </div>
                     <div class="monitor-detail-item">
                         <label>执行状态</label>
-                        <div class="val">{{ m.last_run_status or '-' }}</div>
+                        <div class="val" id="last-status-{{ m.id }}">{{ m.last_run_status or '-' }}</div>
                     </div>
                     <div class="monitor-detail-item">
                         <label>创建时间</label>
@@ -82,7 +82,7 @@
                         <button class="btn btn-ghost btn-xs" onclick="loadReplied({{ m.id }})">刷新</button>
                     </div>
                     <div class="table-wrap" id="replied-table-{{ m.id }}">
-                        <p class="text-xs text-muted">点击「刷新」加载记录。</p>
+                        <p class="text-xs text-muted">正在加载...</p>
                     </div>
                 </div>
             </div>

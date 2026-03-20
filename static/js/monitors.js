@@ -1,8 +1,77 @@
 const alertEl = document.getElementById('monitor-alert');
+const REPLIED_CACHE_PREFIX = 'monitor-replied-v1:';
+const POLL_INTERVAL_MS = 8000;
+let monitorPollTimer = null;
+const lastRunSnapshot = new Map();
 
 function showAlert(msg, type = 'info') {
     alertEl.textContent = msg;
     alertEl.className = `alert alert-${type} visible`;
+}
+
+function getMonitorIds() {
+    return Array.from(document.querySelectorAll('.monitor-card'))
+        .map(card => {
+            const raw = String(card.id || '').replace('mc-', '');
+            const id = parseInt(raw, 10);
+            return Number.isFinite(id) ? id : null;
+        })
+        .filter(id => id !== null);
+}
+
+function getRepliedCacheKey(id) {
+    return `${REPLIED_CACHE_PREFIX}${id}`;
+}
+
+function readRepliedCache(id) {
+    try {
+        const raw = localStorage.getItem(getRepliedCacheKey(id));
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed?.rows) ? parsed.rows : null;
+    } catch {
+        return null;
+    }
+}
+
+function writeRepliedCache(id, rows) {
+    try {
+        localStorage.setItem(getRepliedCacheKey(id), JSON.stringify({ rows, ts: Date.now() }));
+    } catch {
+        // Ignore cache write errors silently.
+    }
+}
+
+function renderRepliedRows(id, rows) {
+    const wrap = document.getElementById(`replied-table-${id}`);
+    if (!wrap) return;
+    if (!rows.length) {
+        wrap.innerHTML = '<p class="text-xs text-muted">暂无回复记录。</p>';
+        return;
+    }
+
+    wrap.innerHTML = `
+        <table>
+            <thead>
+                <tr>
+                    <th>评论者</th>
+                    <th>评论内容</th>
+                    <th>回复内容</th>
+                    <th>回复时间</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${rows.map(row => `
+                    <tr>
+                        <td>${escHtml(row.author_name || '-')}</td>
+                        <td class="td-truncate">${escHtml(row.comment_message || '-')}</td>
+                        <td class="td-truncate">${escHtml(row.reply_message || '-')}</td>
+                        <td class="td-muted text-xs">${escHtml(row.replied_at || '-')}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
 }
 
 function toggleMonitorCard(id) {
@@ -21,7 +90,8 @@ async function runMonitor(id, btn) {
         const res = await r.json();
         const result = res.result || {};
         showAlert(`执行完成：回复 ${result.replied ?? 0} 条，跳过 ${result.skipped ?? 0} 条。`, 'success');
-        setTimeout(() => location.reload(), 1000);
+        await refreshMonitorCards();
+        await loadReplied(id, { forceNetwork: true });
     } catch (e) {
         showAlert(e.message, 'error');
     } finally {
@@ -30,7 +100,8 @@ async function runMonitor(id, btn) {
     }
 }
 
-async function toggleMonitorEnabled(id, currentEnabled, btn) {
+async function toggleMonitorEnabled(id, btn) {
+    const currentEnabled = btn.dataset.enabled === '1';
     const newEnabled = !currentEnabled;
     try {
         const r = await fetch(`/api/monitors/${id}`, {
@@ -39,8 +110,8 @@ async function toggleMonitorEnabled(id, currentEnabled, btn) {
             body: JSON.stringify({ enabled: newEnabled }),
         });
         if (!r.ok) throw new Error((await r.json()).detail || '操作失败');
-        showAlert(`监控已${newEnabled ? '启用' : '暂停'}，刷新中...`, 'success');
-        setTimeout(() => location.reload(), 500);
+        showAlert(`监控已${newEnabled ? '启用' : '暂停'}。`, 'success');
+        await refreshMonitorCards();
     } catch (e) {
         showAlert(e.message, 'error');
     }
@@ -56,6 +127,7 @@ async function saveMonitor(id) {
         });
         if (!r.ok) throw new Error((await r.json()).detail || '更新失败');
         showAlert('监控设置已更新。', 'success');
+        await refreshMonitorCards();
     } catch (e) {
         showAlert(e.message, 'error');
     }
@@ -74,41 +146,87 @@ async function deleteMonitor(id) {
     }
 }
 
-async function loadReplied(id) {
+async function loadReplied(id, options = {}) {
+    const forceNetwork = Boolean(options.forceNetwork);
+    const cached = readRepliedCache(id);
+    if (cached && !forceNetwork) {
+        renderRepliedRows(id, cached);
+        return cached;
+    }
+
     const wrap = document.getElementById(`replied-table-${id}`);
+    if (!wrap) return [];
     wrap.innerHTML = '<p class="text-xs text-muted">加载中...</p>';
     try {
         const r = await fetch(`/api/monitors/${id}/replied?limit=50`);
         if (!r.ok) throw new Error('获取失败');
         const rows = await r.json();
-        if (!rows.length) {
-            wrap.innerHTML = '<p class="text-xs text-muted">暂无回复记录。</p>';
-            return;
-        }
-        wrap.innerHTML = `
-            <table>
-                <thead>
-                    <tr>
-                        <th>评论者</th>
-                        <th>评论内容</th>
-                        <th>回复内容</th>
-                        <th>回复时间</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rows.map(row => `
-                        <tr>
-                            <td>${escHtml(row.author_name || '-')}</td>
-                            <td class="td-truncate">${escHtml(row.comment_message || '-')}</td>
-                            <td class="td-truncate">${escHtml(row.reply_message || '-')}</td>
-                            <td class="td-muted text-xs">${escHtml(row.replied_at || '-')}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        `;
+        renderRepliedRows(id, rows);
+        writeRepliedCache(id, rows);
+        return rows;
     } catch (e) {
         wrap.innerHTML = `<p class="text-xs text-danger">${e.message}</p>`;
+        return [];
+    }
+}
+
+function applyMonitorState(monitor) {
+    const id = monitor.id;
+
+    const dot = document.getElementById(`dot-${id}`);
+    if (dot) {
+        dot.classList.toggle('active', Boolean(monitor.enabled));
+        dot.classList.toggle('paused', !monitor.enabled);
+    }
+
+    const enabledBadge = document.getElementById(`badge-enabled-${id}`);
+    if (enabledBadge) {
+        enabledBadge.classList.toggle('badge-success', Boolean(monitor.enabled));
+        enabledBadge.classList.toggle('badge-neutral', !monitor.enabled);
+    }
+
+    const enabledText = document.getElementById(`enabled-text-${id}`);
+    if (enabledText) enabledText.textContent = monitor.enabled ? '监控中' : '已暂停';
+
+    const intervalBadge = document.getElementById(`badge-interval-${id}`);
+    if (intervalBadge) intervalBadge.textContent = `每 ${monitor.interval_seconds}s`;
+
+    const intervalInput = document.getElementById(`interval-${id}`);
+    if (intervalInput && document.activeElement !== intervalInput) {
+        intervalInput.value = String(monitor.interval_seconds);
+    }
+
+    const enabledBtn = document.getElementById(`btn-enabled-${id}`);
+    if (enabledBtn) {
+        enabledBtn.dataset.enabled = monitor.enabled ? '1' : '0';
+        enabledBtn.textContent = monitor.enabled ? '暂停' : '启用';
+    }
+
+    const lastRun = document.getElementById(`last-run-${id}`);
+    if (lastRun) lastRun.textContent = monitor.last_run_at || '从未';
+
+    const lastStatus = document.getElementById(`last-status-${id}`);
+    if (lastStatus) lastStatus.textContent = monitor.last_run_status || '-';
+}
+
+async function refreshMonitorCards() {
+    const ids = new Set(getMonitorIds());
+    if (!ids.size) return;
+
+    const r = await fetch('/api/monitors');
+    if (!r.ok) throw new Error('刷新监控状态失败');
+
+    const monitors = await r.json();
+    for (const monitor of monitors) {
+        if (!ids.has(monitor.id)) continue;
+
+        const lastRunKey = `${monitor.last_run_at || ''}|${monitor.last_run_status || ''}`;
+        const prev = lastRunSnapshot.get(monitor.id);
+        applyMonitorState(monitor);
+        if (prev !== undefined && prev !== lastRunKey) {
+            await loadReplied(monitor.id, { forceNetwork: true });
+        }
+        lastRunSnapshot.set(monitor.id, lastRunKey);
     }
 }
 
@@ -173,4 +291,31 @@ document.getElementById('btn-create-monitor')?.addEventListener('click', async (
     } finally {
         btn.disabled = false; btn.textContent = '创建监控';
     }
+});
+
+document.addEventListener('DOMContentLoaded', async () => {
+    const ids = getMonitorIds();
+    if (!ids.length) return;
+
+    for (const id of ids) {
+        const cached = readRepliedCache(id);
+        if (cached) {
+            renderRepliedRows(id, cached);
+        }
+    }
+
+    await Promise.all(ids.map(id => loadReplied(id, { forceNetwork: true })));
+    try {
+        await refreshMonitorCards();
+    } catch {
+        // Ignore first refresh failure; polling will retry.
+    }
+
+    monitorPollTimer = window.setInterval(async () => {
+        try {
+            await refreshMonitorCards();
+        } catch {
+            // Keep polling even if one request fails.
+        }
+    }, POLL_INTERVAL_MS);
 });

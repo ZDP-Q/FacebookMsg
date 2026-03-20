@@ -376,8 +376,8 @@ def list_comments_by_post_ids(post_ids: list[str]) -> dict[str, list[dict[str, A
         parent_id = item["parent_comment_id"]
         if parent_id and parent_id in comment_map:
             comment_map[parent_id]["replies"].append(item)
-        elif not parent_id:
-            # 只有没有父评论 ID 的才是顶级评论
+        else:
+            # 父评论不存在（例如抓取窗口外）时，回退到顶级展示，避免评论丢失。
             if item["post_id"] in comments_by_post:
                 comments_by_post[item["post_id"]].append(item)
     

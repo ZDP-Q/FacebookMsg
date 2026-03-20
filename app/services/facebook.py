@@ -167,27 +167,49 @@ class FacebookService:
         )
 
     async def fetch_comments_for_post(self, post_id: str, limit: int = 100) -> list[dict[str, Any]]:
-        # 请求包含嵌套回复，支持到更深层次
         payload = await self._request(
             "GET",
             f"{post_id}/comments",
             params={
-                "fields": "id,message,from,created_time,replies{id,message,from,created_time,replies{id,message,from,created_time}}",
+                "fields": "id,message,from,created_time,parent{id}",
                 "limit": limit,
             },
         )
-        return payload.get("data", [])
+        comments = payload.get("data", [])
+        for comment in comments:
+            await self._populate_replies(comment, limit=limit, depth=1, max_depth=20)
+        return comments
 
     async def fetch_replies_for_comment(self, comment_id: str, limit: int = 100) -> list[dict[str, Any]]:
         payload = await self._request(
             "GET",
             f"{comment_id}/comments",
             params={
-                "fields": "id,message,from,created_time",
+                "fields": "id,message,from,created_time,parent{id}",
                 "limit": limit,
             },
         )
         return payload.get("data", [])
+
+    async def _populate_replies(
+        self,
+        comment: dict[str, Any],
+        *,
+        limit: int,
+        depth: int,
+        max_depth: int,
+    ) -> None:
+        comment_id = str(comment.get("id", ""))
+        if not comment_id or depth >= max_depth:
+            return
+
+        replies = await self.fetch_replies_for_comment(comment_id, limit=limit)
+        if not replies:
+            return
+
+        comment["replies"] = {"data": replies}
+        for reply in replies:
+            await self._populate_replies(reply, limit=limit, depth=depth + 1, max_depth=max_depth)
 
     async def send_reply(self, comment_id: str, message: str) -> dict[str, Any]:
         return await self._request(
