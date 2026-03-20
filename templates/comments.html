@@ -51,8 +51,8 @@
 
                     <!-- Comment list -->
                     <div class="comment-list">
-                        {% for comment in post.comments %}
-                        <div class="comment-item" id="ci-{{ comment.id }}">
+                        {% macro render_comment(comment, depth=0) %}
+                        <div class="comment-item {{ 'reply-item' if depth > 0 }}" id="ci-{{ comment.id }}" style="margin-left: {{ depth * 20 }}px">
                             <div class="comment-top">
                                 <div class="comment-avatar">{{ (comment.author_name or '?')[0]|upper }}</div>
                                 <div class="comment-body">
@@ -74,26 +74,22 @@
                                 </div>
                             </div>
                         </div>
-                        {% for reply in comment.replies %}
-                        <div class="comment-item reply-item" id="ci-{{ reply.id }}">
-                            <div class="comment-top">
-                                <div class="comment-avatar">{{ (reply.author_name or '?')[0]|upper }}</div>
-                                <div class="comment-body">
-                                    <span class="comment-author">{{ reply.author_name or '匿名用户' }}</span>
-                                    <span class="comment-time">{{ reply.created_time or '' }}</span>
-                                    <p class="comment-text">{{ reply.message or '（空）' }}</p>
-                                </div>
-                            </div>
-                            <div class="comment-actions-row">
-                                <button class="btn btn-danger btn-xs" onclick="delComment('{{ reply.id }}')">删除</button>
-                            </div>
-                        </div>
-                        {% endfor %}
+                        {% if comment.replies %}
+                            {% for reply in comment.replies %}
+                                {{ render_comment(reply, depth + 1) }}
+                            {% endfor %}
+                        {% endif %}
+                        {% endmacro %}
+
+                        {% if post.comments %}
+                            {% for comment in post.comments %}
+                                {{ render_comment(comment) }}
+                            {% endfor %}
                         {% else %}
                         <div class="empty-state" style="padding:20px">
                             <p>该帖子暂无评论。</p>
                         </div>
-                        {% endfor %}
+                        {% endif %}
                     </div>
                 </div>
             </div>

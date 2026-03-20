@@ -167,11 +167,12 @@ class FacebookService:
         )
 
     async def fetch_comments_for_post(self, post_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        # 请求包含嵌套回复，支持到更深层次
         payload = await self._request(
             "GET",
             f"{post_id}/comments",
             params={
-                "fields": "id,message,from,created_time,replies{id,message,from,created_time}",
+                "fields": "id,message,from,created_time,replies{id,message,from,created_time,replies{id,message,from,created_time}}",
                 "limit": limit,
             },
         )
