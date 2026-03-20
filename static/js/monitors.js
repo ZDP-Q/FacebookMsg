@@ -45,22 +45,22 @@ async function toggleMonitorEnabled(id, currentEnabled, btn) {
         showAlert(e.message, 'error');
     }
 }
-
 async function saveMonitor(id) {
-    const interval = parseInt(document.getElementById(`interval-${id}`)?.value || '300');
-    const depth    = parseInt(document.getElementById(`depth-${id}`)?.value || '1');
+    const interval = parseInt(document.getElementById(`interval-${id}`)?.value || '300', 10);
+
     try {
         const r = await fetch(`/api/monitors/${id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ interval_seconds: interval, max_depth: depth }),
+            body: JSON.stringify({ interval_seconds: interval }),
         });
-        if (!r.ok) throw new Error((await r.json()).detail || '保存失败');
-        showAlert('设置已保存。', 'success');
+        if (!r.ok) throw new Error((await r.json()).detail || '更新失败');
+        showAlert('监控设置已更新。', 'success');
     } catch (e) {
         showAlert(e.message, 'error');
     }
 }
+
 
 async function deleteMonitor(id) {
     if (!confirm(`确认删除监控 #${id}？该操作不会删除帖子和评论数据。`)) return;
@@ -156,7 +156,6 @@ modal.addEventListener('click', (e) => {
 document.getElementById('btn-create-monitor')?.addEventListener('click', async () => {
     const postId   = document.getElementById('new-post-select').value;
     const interval = parseInt(document.getElementById('new-interval').value || '300');
-    const depth    = parseInt(document.getElementById('new-depth').value || '1');
     if (!postId) { showAlert('请选择一个帖子。', 'warning'); return; }
     const btn = document.getElementById('btn-create-monitor');
     btn.disabled = true; btn.textContent = '创建中...';
@@ -164,7 +163,7 @@ document.getElementById('btn-create-monitor')?.addEventListener('click', async (
         const r = await fetch('/api/monitors', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ post_id: postId, interval_seconds: interval, max_depth: depth }),
+            body: JSON.stringify({ post_id: postId, interval_seconds: interval }),
         });
         if (!r.ok) throw new Error((await r.json()).detail || '创建失败');
         showAlert('监控创建成功，刷新中...', 'success');

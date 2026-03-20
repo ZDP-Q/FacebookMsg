@@ -47,13 +47,11 @@ class ReplyPayload(BaseModel):
 class CreateMonitorPayload(BaseModel):
     post_id: str
     interval_seconds: int = 300
-    max_depth: int = 1
 
 
 class UpdateMonitorPayload(BaseModel):
     enabled: bool | None = None
     interval_seconds: int | None = None
-    max_depth: int | None = None
 
 
 class AccountPayload(BaseModel):
@@ -408,7 +406,6 @@ async def create_monitor_api(payload: CreateMonitorPayload):
         monitor_id = create_monitor(
             post_id=payload.post_id,
             interval_seconds=max(1, payload.interval_seconds),
-            max_depth=max(1, min(payload.max_depth, 3)),
         )
         return {"status": "success", "monitor_id": monitor_id}
     except Exception as exc:
@@ -435,8 +432,6 @@ async def update_monitor_api(monitor_id: int, payload: UpdateMonitorPayload):
         kwargs["enabled"] = int(payload.enabled)
     if payload.interval_seconds is not None:
         kwargs["interval_seconds"] = max(1, payload.interval_seconds)
-    if payload.max_depth is not None:
-        kwargs["max_depth"] = max(1, min(payload.max_depth, 3))
     update_monitor(monitor_id, **kwargs)
     return {"status": "success"}
 

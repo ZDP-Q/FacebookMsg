@@ -108,9 +108,8 @@ class MonitorService:
     async def _execute_monitor(self, monitor: dict[str, Any]) -> dict[str, Any]:
         monitor_id = monitor["id"]
         post_id = monitor["post_id"]
-        max_depth = int(monitor.get("max_depth") or 1)
 
-        logger.info("[monitor] running monitor=%s post=%s depth=%s", monitor_id, post_id, max_depth)
+        logger.info("[monitor] running monitor=%s post=%s (unlimited depth mode)", monitor_id, post_id)
 
         post = get_post(post_id) or {}
         # 优先从数据库中获取规范化的数字 Page ID
@@ -147,18 +146,16 @@ class MonitorService:
                 facebook=facebook,
                 ai=ai,
                 depth=depth,
-                max_depth=max_depth,
                 parent_message=parent_msg,
                 canonical_page_id=canonical_page_id
             )
             stats["replied"] += replied
             stats["skipped"] += skipped
 
-            # 2. 如果深度未达上限，处理子回复
-            if depth < max_depth:
-                replies = current_comment.get("replies", {}).get("data", [])
-                for reply in replies:
-                    await _process_recursive(reply, depth + 1, current_comment.get("message", ""))
+            # 2. 持续处理：即使深度很大，只要有回复就继续向下处理
+            replies = current_comment.get("replies", {}).get("data", [])
+            for reply in replies:
+                await _process_recursive(reply, depth + 1, current_comment.get("message", ""))
 
         # 开始遍历顶层评论
         for comment in comments:
