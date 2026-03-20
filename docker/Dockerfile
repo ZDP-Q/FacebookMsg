@@ -21,6 +21,9 @@ RUN uv sync
 # 第二阶段：运行时环境
 FROM python:3.12-slim
 
+# 安装 uv，使运行阶段也支持 uv run
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 WORKDIR /app
 
 # 从构建阶段拷贝虚拟环境

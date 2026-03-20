@@ -7,9 +7,9 @@ set -e
 export ADMIN_PASSWORD="FbManager@StrongPass2026"
 
 # 执行初始化/重置密码逻辑
-echo "Running reset_pwd.py with ADMIN_PASSWORD set in script..."
-python reset_pwd.py
+echo "Running reset_pwd.py with ADMIN_PASSWORD set in script using uv..."
+uv run python reset_pwd.py
 
 # 使用 exec 启动主程序，使 Python 成为 PID 1 并能接收 SIGTERM 信号
-echo "Starting application..."
-exec python main.py
+echo "Starting application with uv run..."
+exec uv run python main.py
