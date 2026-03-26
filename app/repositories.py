@@ -556,7 +556,7 @@ def list_replied_for_monitor(monitor_id: int, limit: int = 50) -> list[dict[str,
             SELECT r.comment_id, r.post_id, r.monitor_id, r.reply_message, r.replied_at,
                    c.message AS comment_message, c.author_name
             FROM replied_comments r
-            LEFT JOIN comments c ON r.comment_id = c.id
+            INNER JOIN comments c ON r.comment_id = c.id
             WHERE r.monitor_id = ?
             ORDER BY r.replied_at DESC
             LIMIT ?
@@ -764,6 +764,7 @@ def register_failed_login(ip: str) -> int:
             (ip, now_sql),
         )
         return 1
+
 
 
 def clear_login_attempts(ip: str) -> None:

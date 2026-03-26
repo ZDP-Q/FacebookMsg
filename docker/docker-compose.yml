@@ -1,5 +1,5 @@
 services:
-  fb-manager:
+  fbi-manager:
     build:
       context: ..
       dockerfile: docker/Dockerfile
@@ -14,4 +14,10 @@ services:
       - ../data:/app/data
       # 持久化并方便宿主机查看日志
       - ../logs:/app/logs
+      # 挂载提示词模板
+      - ../prompts:/app/prompts
+      # 挂载应用代码、模板和静态资源，实现开发时实时同步
+      - ../app:/app/app
+      - ../templates:/app/templates
+      - ../static:/app/static
     restart: unless-stopped

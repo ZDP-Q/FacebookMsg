@@ -85,7 +85,7 @@
                 <div class="replied-table-wrap" id="replied-wrap-{{ m.id }}">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin:12px 0 6px">
                         <span class="text-sm fw-600">已回复记录</span>
-                        <button class="btn btn-ghost btn-xs" onclick="loadReplied({{ m.id }})">刷新</button>
+                        <button class="btn btn-ghost btn-xs" onclick="loadReplied({{ m.id }}, { forceNetwork: true })">刷新</button>
                     </div>
                     <div class="table-wrap" id="replied-table-{{ m.id }}">
                         <p class="text-xs text-muted">正在加载...</p>

@@ -124,7 +124,36 @@ class MonitorService:
         # 获取最新的评论（包含回复）
         comments = await facebook.fetch_comments_for_post(post_id, limit=200)
 
-        # 更新本地数据库
+        # 1. 识别并清理本地已删除的评论
+        remote_comment_ids = set()
+        def _collect_ids(cs: list[dict[str, Any]]):
+            for c in cs:
+                remote_comment_ids.add(c["id"])
+                if "replies" in c and "data" in c["replies"]:
+                    _collect_ids(c["replies"]["data"])
+        
+        _collect_ids(comments)
+
+        from app.repositories import list_comments_by_post_ids, delete_comment_local
+        local_comments_map = list_comments_by_post_ids([post_id])
+        local_comments = local_comments_map.get(post_id, [])
+        
+        # 展平本地所有评论 ID (包括嵌套的)
+        def _get_local_ids(cs: list[dict[str, Any]], target_set: set[str]):
+            for c in cs:
+                target_set.add(c["id"])
+                if "replies" in c and c["replies"]:
+                    _get_local_ids(c["replies"], target_set)
+        
+        local_comment_ids = set()
+        _get_local_ids(local_comments, local_comment_ids)
+
+        for lid in local_comment_ids:
+            if lid not in remote_comment_ids:
+                logger.info("[monitor] 发现已删除评论，清理本地记录: %s", lid)
+                delete_comment_local(lid)
+
+        # 2. 更新/插入最新评论到本地数据库
         for comment in comments:
             upsert_comment(post_id, None, comment)
 

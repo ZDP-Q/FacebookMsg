@@ -13,23 +13,24 @@
   - **CSRF 防护**：对所有核心写入操作实施强制同源 (Origin/Referer) 校验，有效防御跨站请求伪造。
   - **安全响应头**：配置严格的 CSP、X-Frame-Options 等安全响应头。
 - **智能监控与回复**：
-  - **专属 AI 人设 (Elio)**：AI 扮演一名 35 岁、自信且有魅力的成熟投资人 "Elio"，提供自然且极具社交吸引力的回复。
+  - **多 AI 角色支持**：支持通过 Jinja2 模板自定义 AI 人设（如：提供投资建议的“Elio”或专业互动的“ElyaVena”）。可在 UI 界面中动态切换活跃角色。
+  - **Webhook 集成**：通过 Facebook Webhooks 实现实时互动处理，支持对新评论和消息的即时 AI 回复。
   - **同步增强**：深度适配 Facebook Graph API v25.0，支持多层级 Edge 回退策略（published_posts -> posts -> feed），确保数据同步的高可靠性。
-  - **智能补发机制**：能够检测在 Facebook 网页端被手动删除的 AI 回复，并支持系统重新生成或补发，确保互动的完整性。
+  - **智能补发机制**：自动检测在 Facebook 网页端被手动删除的 AI 回复，并支持系统重新生成或补发。
 - **管理能力**：
-  - **多账号支持**：可灵活切换不同 Page ID 的监控与回复任务。
-  - **配置分离**：账号配置（Access Token 等）与模型配置（OpenAI 兼容 API、提示词等）独立管理，修改即时生效。
-  - **可视化面板**：提供直观的评论中心、帖子监控和同步状态展示。
-  - **连通性测试**：内置“测试配置”按钮，在保存前可实时验证 LLM API 的连通性和模型设置。
+  - **多账号与页面管理**：支持管理多个 Facebook 页面和账号，并提供账号配置的批量导入与导出功能。
+  - **数据库驱动配置**：所有设置（账号、模型、人设）均存储在本地 SQLite 数据库中，无需手动编辑文件即可实现动态更新。
+  - **可视化面板**：提供直观的评论中心、帖子监控、同步状态展示以及 AI 角色选择。
+  - **连通性测试**：内置 LLM API 连通性与模型设置的实时验证功能。
 
 ### 项目架构
 
-- `app/auth.py` & `app/security.py`：核心身份验证与加密库。
+- `app/routes/webhook.py`：Facebook 实时事件处理入口。
 - `app/services/facebook.py`：高度封装的 Graph API v25.0 客户端。
-- `app/services/monitor.py`：基于任务调度的智能监控引擎。
-- `app/services/ai_reply.py`：对接大语言模型 (LLM) 的自动回复逻辑。
-- `data/facebookmsg.sqlite3`：SQLite 数据库，存储帖子、评论、回复及系统配置。
-- `reset_pwd.py`：用于初始化或重置管理员密码的 CLI 工具。
+- `app/services/ai_reply.py`：基于 Jinja2 模板的 AI 人设回复核心逻辑。
+- `app/services/sync.py`：处理后台数据同步与流式更新。
+- `prompts/`：基于 Jinja2 的 AI 人设模板目录。
+- `data/facebookmsg.sqlite3`：存储所有持久化数据与系统配置的 SQLite 数据库。
 
 ### 快速启动
 
@@ -38,30 +39,30 @@
    uv sync
    ```
 
-2. **初始化/重置密码**：
+2. **初始化管理员**：
    ```bash
    uv run python reset_pwd.py
    ```
-   *默认用户名为 `admin`。首次运行或环境变更时，必须设置 16 位及以上的强密码。*
+   *默认用户名为 `admin`。必须设置 16 位及以上的强密码。*
 
 3. **运行应用**：
    ```bash
    uv run python main.py
    ```
-   访问 `http://127.0.0.1:8000` 并使用管理员账号登录。
+   访问 `http://127.0.0.1:8000`。
 
-### Docker 部署
+### Webhook 配置
 
-项目在 `docker/` 目录下提供了预配置的 Docker 部署方案：
-- 管理员密码 `ADMIN_PASSWORD` 在 `docker/start.sh` 脚本中统一管理（需设置为 16 位以上强密码）。
-- 持久化数据和日志通过 Volume 映射到宿主机目录。
+若要启用实时更新，请在 Facebook 开发者中心配置您的应用：
+1. **回调 URL (Callback URL)**：`https://your-domain.com/webhook`
+2. **验证令牌 (Verify Token)**：设置自定义令牌（需与 FBIManager 中的配置匹配）。
+3. **订阅项**：订阅 `feed`（针对帖子/评论）和 `messages`（针对直接互动）。
 
 ### 配置说明
 
-在首页的**配置面板**或**安全设置**中进行维护：
-- **安全设置**：修改管理员当前密码。
-- **账号配置**：配置 `PAGE_ACCESS_TOKEN`、`PAGE_ID` 和 `API_VERSION` (建议使用 v25.0)。
-- **模型配置**：配置 API 地址、API 密钥、模型名称以及 AI 系统提示词 (Prompt)。使用**测试配置**按钮验证连通性。
+- **账号管理**：添加、编辑或批量导入多个 Facebook 页面配置。
+- **模型与人设**：配置 LLM 服务商，并从 `prompts/` 目录中选择活跃的 AI 角色。
+- **批量操作**：利用导入/导出功能进行配置迁移或备份。
 
 ### 注意事项
 
