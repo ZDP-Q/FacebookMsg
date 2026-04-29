@@ -51,8 +51,7 @@ A FastAPI-based Facebook interaction management system integrated with AI automa
    ```bash
    uv run python main.py
    ```
-   Access `http://127.0.0.1:8000`.
-
+   Access `http://127.0.0.1:38000`.
 ### Webhook Configuration
 
 To enable real-time updates, configure your Facebook App:

@@ -51,8 +51,7 @@
    ```bash
    uv run python main.py
    ```
-   访问 `http://127.0.0.1:8000`。
-
+   访问 `http://127.0.0.1:38000`。
 ### Webhook 配置
 
 若要启用实时更新，请在 Facebook 开发者中心配置您的应用：

@@ -6,7 +6,7 @@ services:
     container_name: fbimanager
     ports:
       # 允许外部通过服务器 IP 访问
-      - "8000:8000"
+      - "38000:38000"
     environment:
       - TZ=Asia/Shanghai
     volumes:

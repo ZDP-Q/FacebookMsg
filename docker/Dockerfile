@@ -40,7 +40,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
 RUN chmod +x scripts/start.sh
 
 # 暴露端口
-EXPOSE 8000
+EXPOSE 38000
 
 # 使用 JSON 数组格式的 CMD 以确保能正确响应信号
 CMD ["./scripts/start.sh"]
