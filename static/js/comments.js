@@ -216,11 +216,18 @@ window.addMonitor = async function(postId, btn) {
             body: JSON.stringify({ post_id: postId, interval_seconds: 300 }),
         });
         if (!r.ok) throw new Error((await r.json()).detail || '创建监控失败');
-        showAlert('监控创建成功，正在刷新...', 'success');
-        setTimeout(() => location.reload(), 600);
+        
+        // 更新 UI，不再刷新页面
+        showAlert('监控创建成功。', 'success');
+        if (btn) {
+            btn.textContent = '已监控';
+            btn.className = 'btn btn-ghost btn-xs';
+            btn.style.color = 'var(--success)';
+            btn.disabled = true;
+            btn.onclick = null; // 移除点击事件
+        }
     } catch (e) {
         showAlert(e.message, 'error');
-    } finally {
         if (btn) {
             btn.disabled = false;
             btn.textContent = original;

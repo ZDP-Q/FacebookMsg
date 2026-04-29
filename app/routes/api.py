@@ -431,10 +431,10 @@ async def activate_prompt_api(payload: ActivatePromptPayload):
     return {"status": "success"}
 
 @router.get("/posts")
-async def list_posts_api():
+async def list_posts_api(limit: int = 100):
     config = load_config()
     page_id = get_canonical_page_id(config.page_id)
-    posts = list_posts(page_id=page_id)
+    posts = list_posts(page_id=page_id, limit=limit)
     monitors = {m["post_id"]: m for m in list_monitors(page_id=page_id)}
     result = []
     for post in posts:

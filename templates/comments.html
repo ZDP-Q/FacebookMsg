@@ -93,7 +93,7 @@
                                     {% elif post.type == 'status' %}
                                     <span class="badge badge-neutral" style="font-size: 10px; padding: 1px 4px;">📝 状态</span>
                                     {% endif %}
-                                    <span style="flex: 1; overflow: hidden; text-overflow: ellipsis;">{{ post.message or '（无内容）' }}</span>
+                                    <span style="flex: 1; overflow: hidden; text-overflow: ellipsis;">{{ post.message_display or '（无内容）' }}</span>
                                 </div>
                                 <div class="post-info-row">
                                     <span class="text-xs fw-600">{{ post.created_time or '-' }}</span>

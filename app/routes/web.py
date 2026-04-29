@@ -67,36 +67,39 @@ async def home(request: Request):
 
 @router.get("/comments", response_class=HTMLResponse)
 async def content_page(request: Request, limit: int = 50):
+    import json
     config = load_config()
     page_id = get_canonical_page_id(config.page_id)
     # 增加限制，避免一次性加载过多历史数据导致页面卡顿
     posts = list_posts(page_id=page_id, limit=limit)
-    monitors = list_monitors(page_id=page_id)
-    monitored_post_ids = {m["post_id"] for m in monitors}
+    
+    from app.repositories import list_monitored_post_ids
+    monitored_post_ids = list_monitored_post_ids(page_id=page_id)
 
     from collections import defaultdict
     posts_by_date = defaultdict(list)
 
     for post in posts:
+        msg = post.get("message") or ""
         post_data = {
             **post,
             "has_monitor": post["id"] in monitored_post_ids,
+            "message_display": (msg[:300] + "...") if len(msg) > 300 else msg,
             # 初始加载不再包含所有评论，由前端按需异步加载
             "comments_count": 0, 
         }
         
         # 尝试从 raw_json 获取评论总数（如果存在）
-        try:
-            raw = post.get("raw_json")
-            if raw:
-                import json
+        raw = post.get("raw_json")
+        if raw:
+            try:
                 raw_data = json.loads(raw)
                 # Facebook API 可能会在 post 对象中包含 comments 摘要
                 comments_summary = raw_data.get("comments", {})
                 summary = comments_summary.get("summary", {})
                 post_data["comments_count"] = summary.get("total_count", 0)
-        except Exception:
-            pass
+            except Exception:
+                pass
 
         date_str = "未知日期"
         if post.get("created_time"):
@@ -127,7 +130,6 @@ async def personas_page(request: Request):
 async def monitors_page(request: Request):
     config = load_config()
     page_id = get_canonical_page_id(config.page_id)
-    posts = list_posts(page_id=page_id)
     monitors = list_monitors(page_id=page_id)
     monitored_post_ids = {m["post_id"] for m in monitors}
     return templates.TemplateResponse(
@@ -135,7 +137,6 @@ async def monitors_page(request: Request):
         {
             "request": request,
             "monitors": monitors,
-            "posts": posts,
             "monitored_post_ids": monitored_post_ids,
         },
     )

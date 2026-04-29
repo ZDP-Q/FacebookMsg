@@ -333,16 +333,7 @@ def list_posts(page_id: str | None = None, limit: int | None = None) -> list[dic
             
         rows = connection.execute(query, tuple(params)).fetchall()
         
-    results = []
-    for row in rows:
-        d = dict(row)
-        try:
-            raw = json.loads(d.get("raw_json", "{}"))
-            d["video_id"] = raw.get("video_id", "")
-        except Exception:
-            d["video_id"] = ""
-        results.append(d)
-    return results
+    return [dict(row) for row in rows]
 
 
 def delete_posts(post_ids: list[str]) -> None:
@@ -516,9 +507,18 @@ def update_monitor(monitor_id: int, **kwargs: Any) -> None:
         )
 
 
-def delete_monitor(monitor_id: int) -> None:
+def list_monitored_post_ids(page_id: str) -> set[str]:
     with get_connection() as connection:
-        connection.execute("DELETE FROM post_monitors WHERE id = ?", (monitor_id,))
+        rows = connection.execute(
+            """
+            SELECT m.post_id
+            FROM post_monitors m
+            LEFT JOIN posts p ON m.post_id = p.id
+            WHERE p.page_id = ?
+            """,
+            (page_id,),
+        ).fetchall()
+    return {row["post_id"] for row in rows}
 
 
 # ---------------------------------------------------------------------------
