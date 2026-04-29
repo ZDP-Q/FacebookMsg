@@ -13,14 +13,15 @@ FBIManager (Facebook Interaction Manager) is a FastAPI-based application designe
 
 ### Key Architecture Components
 - `app/application.py`: App factory, lifecycle management, and security middleware (Auth, CSRF, CSP).
-- `app/services/sync.py`: Handles batch synchronization of posts, comments, and multi-level insights (Page, Post, Video).
+- `app/services/sync.py`: Handles batch synchronization of posts, comments, and multi-level insights. Includes a Server-Sent Events (SSE) endpoint (`/api/sync/stream`) for real-time progress feedback.
 - `app/services/webhook.py`: Processes real-time Facebook events and coordinates immediate AI responses.
-- `app/services/facebook.py`: Low-level wrapper for Facebook Graph API v25.0 interactions.
+- `app/services/facebook.py`: Low-level wrapper for Facebook Graph API v25.0. Implements a robust `edge_plan` fallback strategy (`published_posts` -> `posts` -> `feed`) to handle varied account permissions.
 - `app/services/ai_reply.py`: Core logic for generating AI responses using template-based personas.
 - `app/services/monitor.py`: Background task scheduler for periodic data refresh.
 - `app/routes/webhook.py`: Entry point for Facebook Webhook verification and event handling.
-- `prompts/`: Directory containing Jinja2 templates for different AI "personas" (e.g., Elio, ElyaVena).
-- `app/repositories.py`: Data Access Object (DAO) layer for SQLite interactions.
+- `app/routes/api.py`: Provides REST endpoints for account management, prompt configuration, and LLM connectivity testing.
+- `prompts/`: Directory containing Jinja2 templates for different AI "personas".
+- `app/repositories.py`: Data Access Object (DAO) layer for SQLite, implementing UPSERT logic for bulk imports and IP-based login throttling.
 
 ## Building and Running
 
@@ -35,7 +36,8 @@ FBIManager (Facebook Interaction Manager) is a FastAPI-based application designe
   ```
 - **Initialize/Reset Admin Password:**
   ```bash
-  # Required 16+ characters.
+  # REQUIRED: At least 16 characters. Set ADMIN_PASSWORD environment variable.
+  export ADMIN_PASSWORD="your-strong-password-here"
   uv run python reset_pwd.py
   ```
 - **Run the Application (Development):**
@@ -54,14 +56,14 @@ FBIManager (Facebook Interaction Manager) is a FastAPI-based application designe
 ## Development Conventions
 
 ### Security Standards
-- **Authentication:** Admin access protected by PBKDF2-SHA256. Login attempts are throttled by IP.
-- **Session Management:** Explicit session lifecycle management and CSRF protection (Origin/Referer validation).
+- **Authentication:** Admin access protected by PBKDF2-SHA256 (390,000 iterations). Passwords MUST be at least 16 characters long. Login attempts are throttled by IP (`admin_login_attempts` table) and locked after multiple failures.
+- **Session Management:** Explicit session lifecycle management (8 hours TTL) and CSRF protection (Origin/Referer validation for sensitive API calls).
 - **Data Privacy:** Access tokens and API keys are stored in the local SQLite database, never hardcoded.
 
 ### Implementation Guidelines
 - **Python Style:** Use Python 3.12 features (e.g., `dataclass(slots=True)`). Adhere to `ruff` for linting.
-- **Persona Management:** AI behaviors are defined in `prompts/*.j2`. Use the registry system to manage and switch personas dynamically.
-- **Multi-Account:** All services must handle multiple Facebook Page configurations dynamically based on the account context.
+- **Persona Management:** AI behaviors are defined in `prompts/*.j2`. The system uses a registry and database (`model_configs.prompt_template`) to manage and switch personas dynamically via the API.
+- **Multi-Account:** All services must handle multiple Facebook Page configurations dynamically using the `repositories.py` DAO layer (e.g., `bulk_import_accounts` with UPSERT).
 - **Async First:** All network I/O and database operations must be asynchronous to ensure high responsiveness.
 
 ### Testing and Validation

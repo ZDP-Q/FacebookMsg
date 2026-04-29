@@ -105,6 +105,11 @@
                             </div>
                             <div class="post-actions-header" onclick="event.stopPropagation()">
                                 <button class="btn btn-secondary btn-xs" onclick="syncPost('{{ post.id }}', this)">同步</button>
+                                {% if post.has_monitor %}
+                                <button class="btn btn-ghost btn-xs" disabled style="color: var(--success);">已监控</button>
+                                {% else %}
+                                <button class="btn btn-primary btn-xs" onclick="addMonitor('{{ post.id }}', this)">监控</button>
+                                {% endif %}
                                 <button class="btn btn-danger btn-xs" onclick="deleteSinglePost('{{ post.id }}')">删除</button>
                             </div>
                         </div>

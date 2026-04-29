@@ -134,6 +134,33 @@ window.syncPost = async function(postId, btn) {
     }
 }
 
+window.addMonitor = async function(postId, btn) {
+    if (btn?.disabled) return;
+    const original = btn?.textContent || '监控';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '...';
+    }
+    showAlert('正在创建监控...', 'info');
+    try {
+        const r = await fetch('/api/monitors', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ post_id: postId, interval_seconds: 300 }),
+        });
+        if (!r.ok) throw new Error((await r.json()).detail || '创建监控失败');
+        showAlert('监控创建成功，正在刷新...', 'success');
+        setTimeout(() => location.reload(), 600);
+    } catch (e) {
+        showAlert(e.message, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = original;
+        }
+    }
+}
+
 async function doSync(limit, since, until, allPosts = false) {
     showAlert(`开始同步任务...`, 'info');
     showProgress("正在准备同步帖子...");

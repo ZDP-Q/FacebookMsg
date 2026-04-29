@@ -71,6 +71,8 @@ async def content_page(request: Request):
     page_id = get_canonical_page_id(config.page_id)
     posts = list_posts(page_id=page_id)
     comments_by_post = list_comments_by_post_ids([post["id"] for post in posts])
+    monitors = list_monitors(page_id=page_id)
+    monitored_post_ids = {m["post_id"] for m in monitors}
 
     from collections import defaultdict
     posts_by_date = defaultdict(list)
@@ -79,6 +81,7 @@ async def content_page(request: Request):
         post_data = {
             **post,
             "comments": comments_by_post.get(post["id"], []),
+            "has_monitor": post["id"] in monitored_post_ids,
         }
         # post["created_time"] is like "2026-03-23T10:21:27+0000"
         date_str = "未知日期"
