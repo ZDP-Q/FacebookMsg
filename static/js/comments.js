@@ -32,9 +32,76 @@ function hideProgress() {
 }
 
 /* UI Interaction Functions */
-window.togglePost = function(headerEl) {
+window.togglePost = async function(headerEl) {
     const card = headerEl.closest('.post-card');
+    const postId = card.getAttribute('data-post-id');
+    const isExpanding = !card.classList.contains('expanded');
+    
     card.classList.toggle('expanded');
+    
+    if (isExpanding) {
+        // 如果是展开且尚未加载评论，则加载
+        const listEl = document.getElementById(`comment-list-${postId}`);
+        if (listEl && listEl.getAttribute('data-loaded') !== 'true') {
+            await loadComments(postId, listEl);
+        }
+    }
+}
+
+async function loadComments(postId, listEl) {
+    try {
+        const r = await fetch(`/api/posts/${postId}/comments`);
+        if (!r.ok) throw new Error('加载评论失败');
+        const comments = await r.json();
+        
+        if (!comments || comments.length === 0) {
+            listEl.innerHTML = '<div class="empty-state" style="padding:20px"><p>该帖子暂无评论。</p></div>';
+        } else {
+            listEl.innerHTML = '';
+            comments.forEach(c => renderComment(c, listEl, 0));
+        }
+        listEl.setAttribute('data-loaded', 'true');
+    } catch (e) {
+        listEl.innerHTML = `<div class="empty-state" style="padding:20px; color: var(--danger);"><p>${e.message}</p></div>`;
+    }
+}
+
+function renderComment(comment, container, depth) {
+    const item = document.createElement('div');
+    item.className = `comment-item ${depth > 0 ? 'reply-item' : ''}`;
+    item.id = `ci-${comment.id}`;
+    if (depth > 0) item.style.marginLeft = `${depth * 20}px`;
+    
+    const avatarChar = (comment.author_name || '?')[0].toUpperCase();
+    
+    item.innerHTML = `
+        <div class="comment-top">
+            <div class="comment-avatar">${avatarChar}</div>
+            <div class="comment-body">
+                <span class="comment-author">${comment.author_name || '匿名用户'}</span>
+                <span class="comment-time">${comment.created_time || ''}</span>
+                <p class="comment-text">${comment.message || '（空）'}</p>
+            </div>
+        </div>
+        <div class="comment-actions-row">
+            <button class="btn btn-ghost btn-xs" onclick="toggleReplyForm('${comment.id}')">回复</button>
+            <button class="btn btn-ghost btn-xs" onclick="genAiReply('${comment.id}', this)">AI 生成</button>
+            <button class="btn btn-danger btn-xs" onclick="delComment('${comment.id}')">删除</button>
+        </div>
+        <div class="reply-form-wrap" id="rf-${comment.id}">
+            <textarea id="rt-${comment.id}" placeholder="输入回复..."></textarea>
+            <div class="reply-form-actions">
+                <button class="btn btn-secondary btn-sm" onclick="toggleReplyForm('${comment.id}')">取消</button>
+                <button class="btn btn-primary btn-sm" onclick="sendReply('${comment.id}')">发送</button>
+            </div>
+        </div>
+    `;
+    
+    container.appendChild(item);
+    
+    if (comment.replies && comment.replies.length > 0) {
+        comment.replies.forEach(reply => renderComment(reply, container, depth + 1));
+    }
 }
 
 window.toggleReplyForm = function(commentId) {

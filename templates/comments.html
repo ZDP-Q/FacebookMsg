@@ -97,7 +97,7 @@
                                 </div>
                                 <div class="post-info-row">
                                     <span class="text-xs fw-600">{{ post.created_time or '-' }}</span>
-                                    <span class="text-xs">{{ post.comments|length }} 条评论</span>
+                                    <span class="text-xs">{{ post.comments_count or 0 }} 条评论</span>
                                     {% if post.permalink_url %}
                                     <a href="{{ post.permalink_url }}" target="_blank" rel="noreferrer" onclick="event.stopPropagation()">查看原帖 ↗</a>
                                     {% endif %}
@@ -116,46 +116,10 @@
 
                         <!-- Post body -->
                         <div class="post-body">
-                            <div class="comment-list">
-                                {% macro render_comment(comment, depth=0) %}
-                                <div class="comment-item {{ 'reply-item' if depth > 0 }}" id="ci-{{ comment.id }}" style="margin-left: {{ depth * 20 }}px">
-                                    <div class="comment-top">
-                                        <div class="comment-avatar">{{ (comment.author_name or '?')[0]|upper }}</div>
-                                        <div class="comment-body">
-                                            <span class="comment-author">{{ comment.author_name or '匿名用户' }}</span>
-                                            <span class="comment-time">{{ comment.created_time or '' }}</span>
-                                            <p class="comment-text">{{ comment.message or '（空）' }}</p>
-                                        </div>
-                                    </div>
-                                    <div class="comment-actions-row">
-                                        <button class="btn btn-ghost btn-xs" onclick="toggleReplyForm('{{ comment.id }}')">回复</button>
-                                        <button class="btn btn-ghost btn-xs" onclick="genAiReply('{{ comment.id }}', this)">AI 生成</button>
-                                        <button class="btn btn-danger btn-xs" onclick="delComment('{{ comment.id }}')">删除</button>
-                                    </div>
-                                    <div class="reply-form-wrap" id="rf-{{ comment.id }}">
-                                        <textarea id="rt-{{ comment.id }}" placeholder="输入回复..."></textarea>
-                                        <div class="reply-form-actions">
-                                            <button class="btn btn-secondary btn-sm" onclick="toggleReplyForm('{{ comment.id }}')">取消</button>
-                                            <button class="btn btn-primary btn-sm" onclick="sendReply('{{ comment.id }}')">发送</button>
-                                        </div>
-                                    </div>
-                                </div>
-                                {% if comment.replies %}
-                                    {% for reply in comment.replies %}
-                                        {{ render_comment(reply, depth + 1) }}
-                                    {% endfor %}
-                                {% endif %}
-                                {% endmacro %}
-
-                                {% if post.comments %}
-                                    {% for comment in post.comments %}
-                                        {{ render_comment(comment) }}
-                                    {% endfor %}
-                                {% else %}
+                            <div class="comment-list" id="comment-list-{{ post.id }}">
                                 <div class="empty-state" style="padding:20px">
-                                    <p>该帖子暂无评论。</p>
+                                    <p>正在加载评论...</p>
                                 </div>
-                                {% endif %}
                             </div>
                         </div>
                     </div>

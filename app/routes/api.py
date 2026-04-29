@@ -26,6 +26,7 @@ from app.repositories import (
     list_accounts,
     list_posts,
     list_replied_for_monitor,
+    list_comments_by_post_ids,
     set_active_account,
     update_monitor,
     update_account,
@@ -317,6 +318,12 @@ async def sync_single_post_api(post_id: str):
 # ---------------------------------------------------------------------------
 # Comments
 # ---------------------------------------------------------------------------
+
+@router.get("/posts/{post_id}/comments")
+async def get_post_comments(post_id: str):
+    comments_dict = list_comments_by_post_ids([post_id])
+    return comments_dict.get(post_id, [])
+
 
 @router.post("/comments/{comment_id}/reply")
 async def create_reply(comment_id: str, payload: ReplyPayload):

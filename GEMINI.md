@@ -19,7 +19,10 @@ FBIManager (Facebook Interaction Manager) is a FastAPI-based application designe
 - `app/services/ai_reply.py`: Core logic for generating AI responses using template-based personas.
 - `app/services/monitor.py`: Background task scheduler for periodic data refresh.
 - `app/routes/webhook.py`: Entry point for Facebook Webhook verification and event handling.
-- `app/routes/api.py`: Provides REST endpoints for account management, prompt configuration, and LLM connectivity testing.
+- `app/routes/api.py`: Provides REST endpoints for account management, prompt configuration, LLM connectivity testing, and on-demand comment fetching.
+...
+### Performance Optimization
+- **Lazy Loading:** The Content Center implements lazy loading for comments. Initial page load only fetches post metadata (default limit: 50 posts), and comments are fetched asynchronously via AJAX when a post is expanded. This ensures fast initial rendering even with thousands of comments in the database.
 - `prompts/`: Directory containing Jinja2 templates for different AI "personas".
 - `app/repositories.py`: Data Access Object (DAO) layer for SQLite, implementing UPSERT logic for bulk imports and IP-based login throttling.
 

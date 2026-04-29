@@ -66,11 +66,11 @@ async def home(request: Request):
 
 
 @router.get("/comments", response_class=HTMLResponse)
-async def content_page(request: Request):
+async def content_page(request: Request, limit: int = 50):
     config = load_config()
     page_id = get_canonical_page_id(config.page_id)
-    posts = list_posts(page_id=page_id)
-    comments_by_post = list_comments_by_post_ids([post["id"] for post in posts])
+    # 增加限制，避免一次性加载过多历史数据导致页面卡顿
+    posts = list_posts(page_id=page_id, limit=limit)
     monitors = list_monitors(page_id=page_id)
     monitored_post_ids = {m["post_id"] for m in monitors}
 
@@ -80,10 +80,24 @@ async def content_page(request: Request):
     for post in posts:
         post_data = {
             **post,
-            "comments": comments_by_post.get(post["id"], []),
             "has_monitor": post["id"] in monitored_post_ids,
+            # 初始加载不再包含所有评论，由前端按需异步加载
+            "comments_count": 0, 
         }
-        # post["created_time"] is like "2026-03-23T10:21:27+0000"
+        
+        # 尝试从 raw_json 获取评论总数（如果存在）
+        try:
+            raw = post.get("raw_json")
+            if raw:
+                import json
+                raw_data = json.loads(raw)
+                # Facebook API 可能会在 post 对象中包含 comments 摘要
+                comments_summary = raw_data.get("comments", {})
+                summary = comments_summary.get("summary", {})
+                post_data["comments_count"] = summary.get("total_count", 0)
+        except Exception:
+            pass
+
         date_str = "未知日期"
         if post.get("created_time"):
             try:
@@ -92,7 +106,6 @@ async def content_page(request: Request):
                 pass
         posts_by_date[date_str].append(post_data)
 
-    # Sort dates descending
     sorted_dates = sorted(posts_by_date.keys(), reverse=True)
     grouped_posts = [{"date": d, "posts": posts_by_date[d]} for d in sorted_dates]
 
@@ -101,6 +114,7 @@ async def content_page(request: Request):
         {
             "request": request,
             "grouped_posts": grouped_posts,
+            "current_limit": limit,
         },
     )
 
