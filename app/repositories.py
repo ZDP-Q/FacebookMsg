@@ -521,6 +521,11 @@ def list_monitored_post_ids(page_id: str) -> set[str]:
     return {row["post_id"] for row in rows}
 
 
+def delete_monitor(monitor_id: int) -> None:
+    with get_connection() as connection:
+        connection.execute("DELETE FROM post_monitors WHERE id = ?", (monitor_id,))
+
+
 # ---------------------------------------------------------------------------
 # Replied comments (auto-reply deduplication)
 # ---------------------------------------------------------------------------
