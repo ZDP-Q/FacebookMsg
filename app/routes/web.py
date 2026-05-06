@@ -85,22 +85,9 @@ async def content_page(request: Request, limit: int = 50):
             **post,
             "has_monitor": post["id"] in monitored_post_ids,
             "message_display": (msg[:300] + "...") if len(msg) > 300 else msg,
-            # 初始加载不再包含所有评论，由前端按需异步加载
-            "comments_count": 0, 
+            "comments_count": post.get("local_comment_count", 0), 
         }
         
-        # 尝试从 raw_json 获取评论总数（如果存在）
-        raw = post.get("raw_json")
-        if raw:
-            try:
-                raw_data = json.loads(raw)
-                # Facebook API 可能会在 post 对象中包含 comments 摘要
-                comments_summary = raw_data.get("comments", {})
-                summary = comments_summary.get("summary", {})
-                post_data["comments_count"] = summary.get("total_count", 0)
-            except Exception:
-                pass
-
         date_str = "未知日期"
         if post.get("created_time"):
             try:

@@ -24,16 +24,19 @@ logger = logging.getLogger("uvicorn.error")
 
 # How often the scheduler loop wakes up to check for due monitors (seconds).
 _TICK_INTERVAL = 1
+# Limit maximum concurrent monitor tasks to avoid network congestion and API rate limits.
+_MAX_CONCURRENT_MONITORS = 5
 
 
 class MonitorService:
     def __init__(self):
         self._task: asyncio.Task[None] | None = None
         self._running_monitors: set[int] = set()
+        self._semaphore = asyncio.Semaphore(_MAX_CONCURRENT_MONITORS)
 
     async def start(self) -> None:
         self._task = asyncio.create_task(self._run_loop(), name="monitor-loop")
-        logger.info("[monitor] background scheduler started (tick=%ss)", _TICK_INTERVAL)
+        logger.info("[monitor] background scheduler started (tick=%ss, max_concurrent=%s)", _TICK_INTERVAL, _MAX_CONCURRENT_MONITORS)
 
     async def stop(self) -> None:
         if self._task:
@@ -94,13 +97,14 @@ class MonitorService:
         monitor_id = monitor["id"]
         self._running_monitors.add(monitor_id)
         try:
-            await self._execute_monitor(monitor)
+            async with self._semaphore:
+                await self._execute_monitor(monitor)
         except Exception as exc:
-            logger.error("[monitor] monitor=%s failed: %s", monitor_id, exc)
+            logger.exception("[monitor] monitor=%s failed with exception", monitor_id)
             update_monitor(
                 monitor_id,
                 last_run_at=datetime.now(timezone.utc).isoformat(),
-                last_run_status=f"ERROR: {str(exc)[:300]}",
+                last_run_status=f"ERROR: {type(exc).__name__}: {str(exc)[:300]}",
             )
         finally:
             self._running_monitors.discard(monitor_id)

@@ -58,6 +58,10 @@ class UpdateMonitorPayload(BaseModel):
     interval_seconds: int | None = None
 
 
+class BulkDeleteMonitorPayload(BaseModel):
+    ids: list[int]
+
+
 class AccountPayload(BaseModel):
     name: str = ""
     page_access_token: str
@@ -507,6 +511,27 @@ async def delete_monitor_api(monitor_id: int):
     _assert_monitor_belongs_to_active_page(monitor)
     delete_monitor(monitor_id)
     return {"status": "success"}
+
+
+@router.post("/monitors/bulk-delete")
+async def delete_monitors_api(payload: BulkDeleteMonitorPayload):
+    # For bulk operations, we check each monitor's page_id if we want strict security,
+    # or just trust the admin has already authorized the active page.
+    # To be safe, we'll verify all IDs belong to the active page.
+    from app.repositories import delete_monitors
+    config = load_config()
+    page_id = get_canonical_page_id(config.page_id)
+    
+    valid_ids = []
+    for mid in payload.ids:
+        monitor = get_monitor(mid)
+        if monitor and str(monitor.get("page_id", "")) == page_id:
+            valid_ids.append(mid)
+    
+    if valid_ids:
+        delete_monitors(valid_ids)
+    
+    return {"status": "success", "deleted_count": len(valid_ids)}
 
 
 @router.post("/monitors/{monitor_id}/run")

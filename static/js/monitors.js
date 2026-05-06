@@ -141,8 +141,55 @@ async function deleteMonitor(id) {
         if (!r.ok) throw new Error((await r.json()).detail || '删除失败');
         document.getElementById(`mc-${id}`)?.remove();
         showAlert('监控已删除。', 'success');
+        updateBatchBar();
     } catch (e) {
         showAlert(e.message, 'error');
+    }
+}
+
+function getSelectedMonitorIds() {
+    return Array.from(document.querySelectorAll('.monitor-checkbox:checked'))
+        .map(cb => parseInt(cb.dataset.id, 10))
+        .filter(id => !isNaN(id));
+}
+
+function updateBatchBar() {
+    const selected = getSelectedMonitorIds();
+    const btn = document.getElementById('btn-batch-delete');
+    const countEl = document.getElementById('selected-count');
+    if (btn && countEl) {
+        if (selected.length > 0) {
+            btn.style.display = 'inline-block';
+            countEl.textContent = selected.length;
+        } else {
+            btn.style.display = 'none';
+        }
+    }
+}
+
+async function bulkDeleteMonitors() {
+    const ids = getSelectedMonitorIds();
+    if (!ids.length) return;
+    if (!confirm(`确认批量删除选中的 ${ids.length} 个监控？`)) return;
+
+    const btn = document.getElementById('btn-batch-delete');
+    btn.disabled = true;
+    btn.textContent = '删除中...';
+
+    try {
+        const r = await fetch('/api/monitors/bulk-delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids }),
+        });
+        if (!r.ok) throw new Error((await r.json()).detail || '批量删除失败');
+        const res = await r.json();
+        showAlert(`成功批量删除 ${res.deleted_count} 个监控。`, 'success');
+        setTimeout(() => location.reload(), 800);
+    } catch (e) {
+        showAlert(e.message, 'error');
+        btn.disabled = false;
+        btn.textContent = `批量删除 (${ids.length})`;
     }
 }
 
@@ -316,6 +363,24 @@ async function loadActivePersona() {
 
 document.addEventListener('DOMContentLoaded', async () => {
     loadActivePersona();
+
+    // Batch Actions Event Listeners
+    document.getElementById('select-all-monitors')?.addEventListener('change', (e) => {
+        const checked = e.target.checked;
+        document.querySelectorAll('.monitor-checkbox').forEach(cb => {
+            cb.checked = checked;
+        });
+        updateBatchBar();
+    });
+
+    document.getElementById('monitor-list')?.addEventListener('change', (e) => {
+        if (e.target.classList.contains('monitor-checkbox')) {
+            updateBatchBar();
+        }
+    });
+
+    document.getElementById('btn-batch-delete')?.addEventListener('click', bulkDeleteMonitors);
+
     const ids = getMonitorIds();
     if (!ids.length) return;
 

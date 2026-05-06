@@ -135,19 +135,39 @@ class AIReplyService:
             "Content-Type": "application/json",
         }
 
+        response: httpx.Response | None = None
+        last_exc: Exception | None = None
+
         async with httpx.AsyncClient(timeout=35.0) as client:
-            response = await client.post(self._chat_completions_url(), headers=headers, json=payload_fast)
-
-            if response.status_code >= 400:
-                detail = response.text
+            for attempt in range(3):
                 try:
-                    detail = response.json().get("error", {}).get("message", detail)
-                except ValueError:
-                    pass
+                    response = await client.post(self._chat_completions_url(), headers=headers, json=payload_fast)
 
-                # Some OpenAI-compatible providers reject custom reasoning fields.
-                if self._looks_like_unsupported_param(detail):
-                    response = await client.post(self._chat_completions_url(), headers=headers, json=payload_base)
+                    if response.status_code >= 400:
+                        detail = response.text
+                        try:
+                            detail = response.json().get("error", {}).get("message", detail)
+                        except ValueError:
+                            pass
+
+                        # Some OpenAI-compatible providers reject custom reasoning fields.
+                        if self._looks_like_unsupported_param(detail):
+                            response = await client.post(self._chat_completions_url(), headers=headers, json=payload_base)
+                    
+                    if response.status_code >= 500:
+                        if attempt < 2:
+                            await asyncio.sleep(1.0 * (2 ** attempt))
+                            continue
+                    break
+                except httpx.RequestError as exc:
+                    last_exc = exc
+                    if attempt < 2:
+                        await asyncio.sleep(1.0 * (2 ** attempt))
+                        continue
+                    break
+
+        if response is None:
+            raise RuntimeError(f"AI 接口请求失败: {last_exc or '未收到响应'}")
 
         if response.status_code >= 400:
             detail = response.text

@@ -27,23 +27,32 @@ class FacebookService:
             merged_params.update(params)
 
         response: httpx.Response | None = None
-        for attempt in range(3):
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                response = await client.request(
-                    method,
-                    f"{self.base_url}/{path.lstrip('/')}",
-                    params=merged_params,
-                    json=json_body,
-                )
+        last_exc: Exception | None = None
 
-            if response.status_code == 429 or response.status_code >= 500:
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    response = await client.request(
+                        method,
+                        f"{self.base_url}/{path.lstrip('/')}",
+                        params=merged_params,
+                        json=json_body,
+                    )
+
+                if response.status_code == 429 or response.status_code >= 500:
+                    if attempt < 2:
+                        await asyncio.sleep(0.5 * (2 ** attempt))
+                        continue
+                break
+            except httpx.RequestError as exc:
+                last_exc = exc
                 if attempt < 2:
-                    await asyncio.sleep(0.5 * (2 ** attempt))
+                    await asyncio.sleep(1.0 * (2 ** attempt))
                     continue
-            break
+                break
 
         if response is None:
-            raise RuntimeError("Facebook API 请求失败：未收到响应")
+            raise RuntimeError(f"Facebook API 请求失败：{last_exc or '未收到响应'}")
 
         if response.status_code >= 400:
             detail = response.text

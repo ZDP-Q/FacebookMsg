@@ -85,18 +85,19 @@ def create_account(
     is_active: int = 0,
 ) -> int:
     with get_connection() as connection:
-        if is_active:
-            connection.execute("UPDATE account_configs SET is_active = 0")
-        cursor = connection.execute(
-            """
-            INSERT INTO account_configs (
-                name, page_access_token, verify_token, page_id, api_version, is_active, updated_at
+        with connection:
+            if is_active:
+                connection.execute("UPDATE account_configs SET is_active = 0")
+            cursor = connection.execute(
+                """
+                INSERT OR REPLACE INTO account_configs (
+                    name, page_access_token, verify_token, page_id, api_version, is_active, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (name, page_access_token, verify_token, page_id, api_version, int(bool(is_active))),
             )
-            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """,
-            (name, page_access_token, verify_token, page_id, api_version, int(bool(is_active))),
-        )
-        return int(cursor.lastrowid)
+            return int(cursor.lastrowid)
 
 
 def update_account(account_id: int, **kwargs: Any) -> None:
@@ -105,68 +106,72 @@ def update_account(account_id: int, **kwargs: Any) -> None:
     if not fields:
         return
     with get_connection() as connection:
-        if "is_active" in fields and int(bool(fields["is_active"])) == 1:
-            connection.execute("UPDATE account_configs SET is_active = 0")
-            fields["is_active"] = 1
-        set_clause = ", ".join(f"{k} = ?" for k in fields)
-        values = list(fields.values()) + [account_id]
-        connection.execute(
-            f"UPDATE account_configs SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            values,
-        )
+        with connection:
+            if "is_active" in fields and int(bool(fields["is_active"])) == 1:
+                connection.execute("UPDATE account_configs SET is_active = 0")
+                fields["is_active"] = 1
+            set_clause = ", ".join(f"{k} = ?" for k in fields)
+            values = list(fields.values()) + [account_id]
+            connection.execute(
+                f"UPDATE account_configs SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                values,
+            )
 
 
 def delete_account(account_id: int) -> None:
     with get_connection() as connection:
-        connection.execute("DELETE FROM account_configs WHERE id = ?", (account_id,))
-        active = connection.execute("SELECT id FROM account_configs WHERE is_active = 1 LIMIT 1").fetchone()
-        if active is None:
-            fallback = connection.execute("SELECT id FROM account_configs ORDER BY id ASC LIMIT 1").fetchone()
-            if fallback is not None:
-                connection.execute("UPDATE account_configs SET is_active = 1 WHERE id = ?", (fallback["id"],))
+        with connection:
+            connection.execute("DELETE FROM account_configs WHERE id = ?", (account_id,))
+            active = connection.execute("SELECT id FROM account_configs WHERE is_active = 1 LIMIT 1").fetchone()
+            if active is None:
+                fallback = connection.execute("SELECT id FROM account_configs ORDER BY id ASC LIMIT 1").fetchone()
+                if fallback is not None:
+                    connection.execute("UPDATE account_configs SET is_active = 1 WHERE id = ?", (fallback["id"],))
 
 
 def set_active_account(account_id: int) -> None:
     with get_connection() as connection:
-        connection.execute("UPDATE account_configs SET is_active = 0")
-        connection.execute(
-            "UPDATE account_configs SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (account_id,),
-        )
+        with connection:
+            connection.execute("UPDATE account_configs SET is_active = 0")
+            connection.execute(
+                "UPDATE account_configs SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (account_id,),
+            )
 
 
 def bulk_import_accounts(accounts: list[dict[str, Any]]) -> int:
     """Import multiple accounts, UPSERT by page_id."""
     count = 0
     with get_connection() as connection:
-        for acc in accounts:
-            page_id = str(acc.get("page_id", "")).strip()
-            if not page_id:
-                continue
+        with connection:
+            for acc in accounts:
+                page_id = str(acc.get("page_id", "")).strip()
+                if not page_id:
+                    continue
+                
+                connection.execute(
+                    """
+                    INSERT INTO account_configs (name, page_access_token, verify_token, page_id, api_version, is_active, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
+                    ON CONFLICT(page_id) DO UPDATE SET
+                        name = excluded.name,
+                        page_access_token = excluded.page_access_token,
+                        verify_token = excluded.verify_token,
+                        api_version = excluded.api_version,
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (
+                        acc.get("name", f"Imported {page_id}"),
+                        acc.get("page_access_token", ""),
+                        acc.get("verify_token", ""),
+                        page_id,
+                        acc.get("api_version", "v25.0") or "v25.0",
+                    ),
+                )
+                count += 1
             
-            connection.execute(
-                """
-                INSERT INTO account_configs (name, page_access_token, verify_token, page_id, api_version, is_active, updated_at)
-                VALUES (?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
-                ON CONFLICT(page_id) DO UPDATE SET
-                    name = excluded.name,
-                    page_access_token = excluded.page_access_token,
-                    verify_token = excluded.verify_token,
-                    api_version = excluded.api_version,
-                    updated_at = CURRENT_TIMESTAMP
-                """,
-                (
-                    acc.get("name", f"Imported {page_id}"),
-                    acc.get("page_access_token", ""),
-                    acc.get("verify_token", ""),
-                    page_id,
-                    acc.get("api_version", "v25.0") or "v25.0",
-                ),
-            )
-            count += 1
-        
-        if count > 0:
-            connection.execute("DELETE FROM account_configs WHERE name = '默认账号' OR page_id = 'default-page'")
+            if count > 0:
+                connection.execute("DELETE FROM account_configs WHERE name = '默认账号' OR page_id = 'default-page'")
             
     return count
 
@@ -185,49 +190,51 @@ def get_model_config() -> dict[str, Any] | None:
 
 def upsert_model_config(*, ai_api_base_url: str, ai_api_key: str, ai_model: str, prompt_template: str = 'reply_prompt.j2') -> None:
     with get_connection() as connection:
-        connection.execute(
-            """
-            INSERT INTO model_configs (id, ai_api_base_url, ai_api_key, ai_model, prompt_template, updated_at)
-            VALUES (1, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(id) DO UPDATE SET
-                ai_api_base_url = excluded.ai_api_base_url,
-                ai_api_key = excluded.ai_api_key,
-                ai_model = excluded.ai_model,
-                prompt_template = excluded.prompt_template,
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (ai_api_base_url, ai_api_key, ai_model, prompt_template),
-        )
+        with connection:
+            connection.execute(
+                """
+                INSERT INTO model_configs (id, ai_api_base_url, ai_api_key, ai_model, prompt_template, updated_at)
+                VALUES (1, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(id) DO UPDATE SET
+                    ai_api_base_url = excluded.ai_api_base_url,
+                    ai_api_key = excluded.ai_api_key,
+                    ai_model = excluded.ai_model,
+                    prompt_template = excluded.prompt_template,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (ai_api_base_url, ai_api_key, ai_model, prompt_template),
+            )
 
 
 def upsert_page_profile(profile: dict[str, Any]) -> None:
     picture_url = profile.get("picture", {}).get("data", {}).get("url", "")
     with get_connection() as connection:
-        connection.execute(
-            """
-            INSERT INTO page_profiles (page_id, name, username, link, picture_url, fan_count, category, raw_json, synced_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(page_id) DO UPDATE SET
-                name = excluded.name,
-                username = excluded.username,
-                link = excluded.link,
-                picture_url = excluded.picture_url,
-                fan_count = excluded.fan_count,
-                category = excluded.category,
-                raw_json = excluded.raw_json,
-                synced_at = CURRENT_TIMESTAMP
-            """,
-            (
-                profile.get("id", ""),
-                profile.get("name", ""),
-                profile.get("username", ""),
-                profile.get("link", ""),
-                picture_url,
-                profile.get("fan_count", 0),
-                profile.get("category", ""),
-                json.dumps(profile, ensure_ascii=False),
-            ),
-        )
+        with connection:
+            connection.execute(
+                """
+                INSERT INTO page_profiles (page_id, name, username, link, picture_url, fan_count, category, raw_json, synced_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(page_id) DO UPDATE SET
+                    name = excluded.name,
+                    username = excluded.username,
+                    link = excluded.link,
+                    picture_url = excluded.picture_url,
+                    fan_count = excluded.fan_count,
+                    category = excluded.category,
+                    raw_json = excluded.raw_json,
+                    synced_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    profile.get("id", ""),
+                    profile.get("name", ""),
+                    profile.get("username", ""),
+                    profile.get("link", ""),
+                    picture_url,
+                    profile.get("fan_count", 0),
+                    profile.get("category", ""),
+                    json.dumps(profile, ensure_ascii=False),
+                ),
+            )
 
 
 def get_page_profile(page_id: str | None = None) -> dict[str, Any] | None:
@@ -261,45 +268,54 @@ def get_canonical_page_id(page_id: str) -> str:
 
 def upsert_post(page_id: str, post: dict[str, Any]) -> None:
     with get_connection() as connection:
-        connection.execute(
-            """
-            INSERT INTO posts (id, page_id, message, created_time, full_picture, permalink_url, type, raw_json, synced_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(id) DO UPDATE SET
-                page_id = excluded.page_id,
-                message = excluded.message,
-                created_time = excluded.created_time,
-                full_picture = excluded.full_picture,
-                permalink_url = excluded.permalink_url,
-                type = excluded.type,
-                raw_json = excluded.raw_json,
-                synced_at = CURRENT_TIMESTAMP
-            """,
-            (
-                post["id"],
-                page_id,
-                post.get("message", ""),
-                post.get("created_time", ""),
-                post.get("full_picture", ""),
-                post.get("permalink_url", ""),
-                post.get("type", ""),
-                json.dumps(post, ensure_ascii=False),
-            ),
-        )
+        with connection:
+            connection.execute(
+                """
+                INSERT INTO posts (id, page_id, message, created_time, full_picture, permalink_url, type, raw_json, synced_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(id) DO UPDATE SET
+                    page_id = excluded.page_id,
+                    message = excluded.message,
+                    created_time = excluded.created_time,
+                    full_picture = excluded.full_picture,
+                    permalink_url = excluded.permalink_url,
+                    type = excluded.type,
+                    raw_json = excluded.raw_json,
+                    synced_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    post["id"],
+                    page_id,
+                    post.get("message", ""),
+                    post.get("created_time", ""),
+                    post.get("full_picture", ""),
+                    post.get("permalink_url", ""),
+                    post.get("type", ""),
+                    json.dumps(post, ensure_ascii=False),
+                ),
+            )
 
 
 def replace_comments_for_post(post_id: str, comments: list[dict[str, Any]]) -> None:
     with get_connection() as connection:
-        connection.execute("DELETE FROM comments WHERE post_id = ?", (post_id,))
-        for comment in comments:
-            _insert_comment(connection, post_id, None, comment)
+        with connection:
+            connection.execute("DELETE FROM comments WHERE post_id = ?", (post_id,))
+            for comment in comments:
+                _insert_comment(connection, post_id, None, comment)
 
 
 def _insert_comment(connection, post_id: str, parent_comment_id: str | None, comment: dict[str, Any]) -> None:
     author = comment.get("from", {})
+    
+    # Try to extract parent_id from data if not explicitly provided
+    if parent_comment_id is None:
+        parent_data = comment.get("parent")
+        if parent_data:
+            parent_comment_id = parent_data.get("id")
+
     connection.execute(
         """
-        INSERT INTO comments (id, post_id, parent_comment_id, message, author_name, author_id, created_time, raw_json, synced_at)
+        INSERT OR REPLACE INTO comments (id, post_id, parent_comment_id, message, author_name, author_id, created_time, raw_json, synced_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         """,
         (
@@ -320,12 +336,18 @@ def _insert_comment(connection, post_id: str, parent_comment_id: str | None, com
 
 def list_posts(page_id: str | None = None, limit: int | None = None) -> list[dict[str, Any]]:
     with get_connection() as connection:
+        query = """
+            SELECT p.id, p.page_id, p.message, p.created_time, p.full_picture, 
+                   p.permalink_url, p.type, p.raw_json, p.synced_at,
+                   (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as local_comment_count
+            FROM posts p
+        """
+        params = []
         if page_id:
-            query = "SELECT id, page_id, message, created_time, full_picture, permalink_url, type, raw_json, synced_at FROM posts WHERE page_id = ? ORDER BY created_time DESC, id DESC"
-            params = [page_id]
-        else:
-            query = "SELECT id, page_id, message, created_time, full_picture, permalink_url, type, raw_json, synced_at FROM posts ORDER BY created_time DESC, id DESC"
-            params = []
+            query += " WHERE p.page_id = ?"
+            params.append(page_id)
+        
+        query += " ORDER BY p.created_time DESC, p.id DESC"
             
         if limit is not None:
             query += " LIMIT ?"
@@ -341,25 +363,31 @@ def delete_posts(post_ids: list[str]) -> None:
         return
     placeholders = ",".join("?" for _ in post_ids)
     with get_connection() as connection:
-        # Cascade delete will handle comments if foreign keys are enabled
-        connection.execute(
-            f"DELETE FROM posts WHERE id IN ({placeholders})",
-            post_ids,
-        )
+        with connection:
+            # Cascade delete will handle comments if foreign keys are enabled
+            connection.execute(
+                f"DELETE FROM posts WHERE id IN ({placeholders})",
+                post_ids,
+            )
 
 
 def clear_page_posts(page_id: str) -> None:
     with get_connection() as connection:
-        connection.execute(
-            "DELETE FROM posts WHERE page_id = ?",
-            (page_id,),
-        )
+        with connection:
+            connection.execute(
+                "DELETE FROM posts WHERE page_id = ?",
+                (page_id,),
+            )
 
 
 def get_post(post_id: str) -> dict[str, Any] | None:
     with get_connection() as connection:
         row = connection.execute(
-            "SELECT id, page_id, message, created_time, full_picture, permalink_url, synced_at FROM posts WHERE id = ?",
+            """
+            SELECT id, page_id, message, created_time, full_picture, permalink_url, type, raw_json, synced_at,
+                   (SELECT COUNT(*) FROM comments c WHERE c.post_id = posts.id) as local_comment_count
+            FROM posts WHERE id = ?
+            """,
             (post_id,),
         ).fetchone()
     return dict(row) if row else None
@@ -415,7 +443,8 @@ def list_comments_by_post_ids(post_ids: list[str]) -> dict[str, list[dict[str, A
 
 def delete_comment_local(comment_id: str) -> None:
     with get_connection() as connection:
-        connection.execute("DELETE FROM comments WHERE id = ?", (comment_id,))
+        with connection:
+            connection.execute("DELETE FROM comments WHERE id = ?", (comment_id,))
 
 
 
@@ -425,17 +454,18 @@ def delete_comment_local(comment_id: str) -> None:
 
 def create_monitor(post_id: str, interval_seconds: int = 300, max_depth: int = 1) -> int:
     with get_connection() as connection:
-        connection.execute(
-            """
-            INSERT OR IGNORE INTO post_monitors (post_id, enabled, interval_seconds, max_depth)
-            VALUES (?, 1, ?, ?)
-            """,
-            (post_id, interval_seconds, max_depth),
-        )
-        row = connection.execute(
-            "SELECT id FROM post_monitors WHERE post_id = ?", (post_id,)
-        ).fetchone()
-        return row["id"]
+        with connection:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO post_monitors (post_id, enabled, interval_seconds, max_depth)
+                VALUES (?, 1, ?, ?)
+                """,
+                (post_id, interval_seconds, max_depth),
+            )
+            row = connection.execute(
+                "SELECT id FROM post_monitors WHERE post_id = ?", (post_id,)
+            ).fetchone()
+            return row["id"]
 
 
 def list_monitors(page_id: str | None = None) -> list[dict[str, Any]]:
@@ -502,9 +532,10 @@ def update_monitor(monitor_id: int, **kwargs: Any) -> None:
     set_clause = ", ".join(f"{k} = ?" for k in fields)
     values = list(fields.values()) + [monitor_id]
     with get_connection() as connection:
-        connection.execute(
-            f"UPDATE post_monitors SET {set_clause} WHERE id = ?", values
-        )
+        with connection:
+            connection.execute(
+                f"UPDATE post_monitors SET {set_clause} WHERE id = ?", values
+            )
 
 
 def list_monitored_post_ids(page_id: str) -> set[str]:
@@ -523,7 +554,20 @@ def list_monitored_post_ids(page_id: str) -> set[str]:
 
 def delete_monitor(monitor_id: int) -> None:
     with get_connection() as connection:
-        connection.execute("DELETE FROM post_monitors WHERE id = ?", (monitor_id,))
+        with connection:
+            connection.execute("DELETE FROM post_monitors WHERE id = ?", (monitor_id,))
+
+
+def delete_monitors(monitor_ids: list[int]) -> None:
+    if not monitor_ids:
+        return
+    placeholders = ",".join("?" for _ in monitor_ids)
+    with get_connection() as connection:
+        with connection:
+            connection.execute(
+                f"DELETE FROM post_monitors WHERE id IN ({placeholders})",
+                monitor_ids,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -540,18 +584,20 @@ def has_replied(comment_id: str) -> bool:
 
 def mark_replied(comment_id: str, post_id: str, monitor_id: int | None, reply_message: str) -> None:
     with get_connection() as connection:
-        connection.execute(
-            """
-            INSERT OR IGNORE INTO replied_comments (comment_id, post_id, monitor_id, reply_message)
-            VALUES (?, ?, ?, ?)
-            """,
-            (comment_id, post_id, monitor_id, reply_message),
-        )
+        with connection:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO replied_comments (comment_id, post_id, monitor_id, reply_message)
+                VALUES (?, ?, ?, ?)
+                """,
+                (comment_id, post_id, monitor_id, reply_message),
+            )
 
 
 def unmark_replied(comment_id: str) -> None:
     with get_connection() as connection:
-        connection.execute("DELETE FROM replied_comments WHERE comment_id = ?", (comment_id,))
+        with connection:
+            connection.execute("DELETE FROM replied_comments WHERE comment_id = ?", (comment_id,))
 
 
 def list_replied_for_monitor(monitor_id: int, limit: int = 50) -> list[dict[str, Any]]:
@@ -575,28 +621,29 @@ def upsert_comment(post_id: str, parent_comment_id: str | None, comment: dict[st
     """Insert or update a single comment (used by monitor service for incremental updates)."""
     author = comment.get("from", {})
     with get_connection() as connection:
-        connection.execute(
-            """
-            INSERT INTO comments (id, post_id, parent_comment_id, message, author_name, author_id, created_time, raw_json, synced_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(id) DO UPDATE SET
-                message = excluded.message,
-                author_name = excluded.author_name,
-                author_id = excluded.author_id,
-                raw_json = excluded.raw_json,
-                synced_at = CURRENT_TIMESTAMP
-            """,
-            (
-                comment["id"],
-                post_id,
-                parent_comment_id,
-                comment.get("message", ""),
-                author.get("name", "匿名用户"),
-                author.get("id", ""),
-                comment.get("created_time", ""),
-                json.dumps(comment, ensure_ascii=False),
-            ),
-        )
+        with connection:
+            connection.execute(
+                """
+                INSERT INTO comments (id, post_id, parent_comment_id, message, author_name, author_id, created_time, raw_json, synced_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(id) DO UPDATE SET
+                    message = excluded.message,
+                    author_name = excluded.author_name,
+                    author_id = excluded.author_id,
+                    raw_json = excluded.raw_json,
+                    synced_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    comment["id"],
+                    post_id,
+                    parent_comment_id,
+                    comment.get("message", ""),
+                    author.get("name", "匿名用户"),
+                    author.get("id", ""),
+                    comment.get("created_time", ""),
+                    json.dumps(comment, ensure_ascii=False),
+                ),
+            )
     for reply in comment.get("replies", {}).get("data", []):
         upsert_comment(post_id, comment["id"], reply)
 
@@ -619,29 +666,31 @@ def get_admin_auth() -> dict[str, Any] | None:
 
 def update_admin_password(*, password_hash: str, password_salt: str, password_iterations: int) -> None:
     with get_connection() as connection:
-        connection.execute(
-            """
-            UPDATE admin_auth
-            SET password_hash = ?,
-                password_salt = ?,
-                password_iterations = ?,
-                force_password_change = 0,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = 1
-            """,
-            (password_hash, password_salt, password_iterations),
-        )
+        with connection:
+            connection.execute(
+                """
+                UPDATE admin_auth
+                SET password_hash = ?,
+                    password_salt = ?,
+                    password_iterations = ?,
+                    force_password_change = 0,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = 1
+                """,
+                (password_hash, password_salt, password_iterations),
+            )
 
 
 def create_admin_session(*, session_id: str, ip: str, user_agent: str) -> None:
     with get_connection() as connection:
-        connection.execute(
-            """
-            INSERT INTO admin_sessions (session_id, expires_at, ip, user_agent)
-            VALUES (?, ?, ?, ?)
-            """,
-            (session_id, session_expiry_sql(), ip[:120], user_agent[:512]),
-        )
+        with connection:
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO admin_sessions (session_id, expires_at, ip, user_agent)
+                VALUES (?, ?, ?, ?)
+                """,
+                (session_id, session_expiry_sql(), ip[:120], user_agent[:512]),
+            )
 
 
 def get_admin_session(session_id: str) -> dict[str, Any] | None:
@@ -670,30 +719,34 @@ def get_admin_session(session_id: str) -> dict[str, Any] | None:
 
 def touch_admin_session(session_id: str) -> None:
     with get_connection() as connection:
-        connection.execute(
-            """
-            UPDATE admin_sessions
-            SET expires_at = ?,
-                last_seen_at = CURRENT_TIMESTAMP
-            WHERE session_id = ?
-            """,
-            (session_expiry_sql(), session_id),
-        )
+        with connection:
+            connection.execute(
+                """
+                UPDATE admin_sessions
+                SET expires_at = ?,
+                    last_seen_at = CURRENT_TIMESTAMP
+                WHERE session_id = ?
+                """,
+                (session_expiry_sql(), session_id),
+            )
 
 
 def delete_admin_session(session_id: str) -> None:
     with get_connection() as connection:
-        connection.execute("DELETE FROM admin_sessions WHERE session_id = ?", (session_id,))
+        with connection:
+            connection.execute("DELETE FROM admin_sessions WHERE session_id = ?", (session_id,))
 
 
 def delete_all_admin_sessions() -> None:
     with get_connection() as connection:
-        connection.execute("DELETE FROM admin_sessions")
+        with connection:
+            connection.execute("DELETE FROM admin_sessions")
 
 
 def cleanup_expired_admin_sessions() -> None:
     with get_connection() as connection:
-        connection.execute("DELETE FROM admin_sessions WHERE expires_at <= ?", (now_utc_sql(),))
+        with connection:
+            connection.execute("DELETE FROM admin_sessions WHERE expires_at <= ?", (now_utc_sql(),))
 
 
 def is_ip_locked(ip: str) -> bool:
@@ -715,63 +768,65 @@ def register_failed_login(ip: str) -> int:
     max_attempts = 5
 
     with get_connection() as connection:
-        row = connection.execute(
-            "SELECT failed_count, first_failed_at, lock_until FROM admin_login_attempts WHERE ip = ?",
-            (ip,),
-        ).fetchone()
+        with connection:
+            row = connection.execute(
+                "SELECT failed_count, first_failed_at, lock_until FROM admin_login_attempts WHERE ip = ?",
+                (ip,),
+            ).fetchone()
 
-        if row:
-            lock_until = str(row["lock_until"] or "")
-            if lock_until and now_sql < lock_until:
-                return int(row["failed_count"] or max_attempts)
+            if row:
+                lock_until = str(row["lock_until"] or "")
+                if lock_until and now_sql < lock_until:
+                    return int(row["failed_count"] or max_attempts)
 
-            first_failed_at = str(row["first_failed_at"] or "")
-            failed_count = int(row["failed_count"] or 0)
+                first_failed_at = str(row["first_failed_at"] or "")
+                failed_count = int(row["failed_count"] or 0)
 
-            if not first_failed_at:
-                failed_count = 1
-                first_failed_at = now_sql
-            else:
-                try:
-                    first_failed_dt = datetime.strptime(first_failed_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
-                    age_min = (now - first_failed_dt).total_seconds() / 60
-                except Exception:
-                    age_min = lock_window_minutes + 1
-
-                if age_min > lock_window_minutes:
+                if not first_failed_at:
                     failed_count = 1
                     first_failed_at = now_sql
                 else:
-                    failed_count += 1
+                    try:
+                        first_failed_dt = datetime.strptime(first_failed_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
+                        age_min = (now - first_failed_dt).total_seconds() / 60
+                    except Exception:
+                        age_min = lock_window_minutes + 1
 
-            new_lock_until = ""
-            if failed_count >= max_attempts:
-                new_lock_until = (now + timedelta(minutes=lock_window_minutes)).strftime("%Y-%m-%d %H:%M:%S")
+                    if age_min > lock_window_minutes:
+                        failed_count = 1
+                        first_failed_at = now_sql
+                    else:
+                        failed_count += 1
+
+                new_lock_until = ""
+                if failed_count >= max_attempts:
+                    new_lock_until = (now + timedelta(minutes=lock_window_minutes)).strftime("%Y-%m-%d %H:%M:%S")
+
+                connection.execute(
+                    """
+                    UPDATE admin_login_attempts
+                    SET failed_count = ?,
+                        first_failed_at = ?,
+                        lock_until = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE ip = ?
+                    """,
+                    (failed_count, first_failed_at, new_lock_until or None, ip),
+                )
+                return failed_count
 
             connection.execute(
                 """
-                UPDATE admin_login_attempts
-                SET failed_count = ?,
-                    first_failed_at = ?,
-                    lock_until = ?,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE ip = ?
+                INSERT OR REPLACE INTO admin_login_attempts (ip, failed_count, first_failed_at, lock_until, updated_at)
+                VALUES (?, 1, ?, NULL, CURRENT_TIMESTAMP)
                 """,
-                (failed_count, first_failed_at, new_lock_until or None, ip),
+                (ip, now_sql),
             )
-            return failed_count
-
-        connection.execute(
-            """
-            INSERT INTO admin_login_attempts (ip, failed_count, first_failed_at, lock_until, updated_at)
-            VALUES (?, 1, ?, NULL, CURRENT_TIMESTAMP)
-            """,
-            (ip, now_sql),
-        )
-        return 1
+            return 1
 
 
 
 def clear_login_attempts(ip: str) -> None:
     with get_connection() as connection:
-        connection.execute("DELETE FROM admin_login_attempts WHERE ip = ?", (ip,))
+        with connection:
+            connection.execute("DELETE FROM admin_login_attempts WHERE ip = ?", (ip,))

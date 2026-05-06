@@ -16,6 +16,7 @@
         </div>
     </div>
     <div class="page-actions">
+        <button class="btn btn-outline btn-sm" id="btn-batch-delete" style="display: none; border-color: var(--danger); color: var(--danger);">批量删除 (<span id="selected-count">0</span>)</button>
         <a href="/personas" class="btn btn-outline btn-sm">人设选择</a>
         <button class="btn btn-primary btn-sm" id="btn-add-monitor">+ 添加监控</button>
     </div>
@@ -23,13 +24,24 @@
 
 <div id="monitor-alert" class="alert"></div>
 
+{% if monitors %}
+<div class="batch-actions-bar" style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+    <label class="checkbox-label" style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 14px; user-select: none;">
+        <input type="checkbox" id="select-all-monitors"> 全选当前页
+    </label>
+</div>
+{% endif %}
+
 <!-- Monitor list -->
 <div id="monitor-list">
     {% if monitors %}
         {% for m in monitors %}
         <div class="monitor-card" id="mc-{{ m.id }}">
             <div class="monitor-card-header">
-                <div class="monitor-status-dot {% if m.enabled %}active{% else %}paused{% endif %}" id="dot-{{ m.id }}"></div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <input type="checkbox" class="monitor-checkbox" data-id="{{ m.id }}">
+                    <div class="monitor-status-dot {% if m.enabled %}active{% else %}paused{% endif %}" id="dot-{{ m.id }}"></div>
+                </div>
                 <div class="monitor-meta">
                     <div class="monitor-post-excerpt">{{ m.post_message or '（无内容）' }}</div>
                     <div class="monitor-post-id">{{ m.post_id }}</div>
