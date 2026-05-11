@@ -16,6 +16,7 @@
         </div>
     </div>
     <div class="page-actions">
+        <button class="btn btn-outline btn-sm" id="btn-auto-monitor-settings">自动监控设置</button>
         <button class="btn btn-outline btn-sm" id="btn-batch-delete" style="display: none; border-color: var(--danger); color: var(--danger);">批量删除 (<span id="selected-count">0</span>)</button>
         <a href="/personas" class="btn btn-outline btn-sm">人设选择</a>
         <button class="btn btn-primary btn-sm" id="btn-add-monitor">+ 添加监控</button>
@@ -139,6 +140,59 @@
         <div class="modal-footer">
             <button class="btn btn-secondary" onclick="closeModal()">取消</button>
             <button class="btn btn-primary" id="btn-create-monitor">创建监控</button>
+        </div>
+    </div>
+</div>
+
+<!-- Auto-monitor modal -->
+<div class="modal-backdrop" id="auto-monitor-modal">
+    <div class="modal" style="max-width: 480px;">
+        <div class="modal-header">
+            <h2 class="modal-title">自动监控配置</h2>
+            <button class="btn btn-ghost btn-icon" onclick="closeAutoMonitorModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <!-- Global Config Section -->
+            <div class="auto-monitor-config-section">
+                <div class="config-toggle-row">
+                    <div>
+                        <div style="font-weight: 600; font-size: 14px; margin-bottom: 2px;">启用自动拉取任务</div>
+                        <div class="text-xs text-muted">开启后将按设定时间点扫描新帖子</div>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="auto-monitor-enabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                
+                <div style="margin-top: 20px;">
+                    <label for="auto-monitor-max-posts" style="font-size: 13px; font-weight: 600; margin-bottom: 8px; display: block;">每个账号最大监控数量</label>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <input type="number" id="auto-monitor-max-posts" min="1" max="100" value="10" style="width: 80px;">
+                        <span class="text-xs text-muted">监控中的帖子达到此上限后将不再自动增加</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Schedules Section -->
+            <div class="auto-monitor-config-section">
+                <h3 style="margin-bottom: 16px;">🕒 定时触发点</h3>
+                <div id="auto-monitor-schedules-list" style="margin-bottom: 16px;">
+                    <!-- Alarm rows will be rendered here -->
+                </div>
+                
+                <div class="alarm-input-group">
+                    <input type="time" id="new-schedule-time">
+                    <button class="btn btn-primary btn-sm" id="btn-add-schedule">添加时间点</button>
+                </div>
+                <p class="text-xs text-muted" style="margin-top: 10px; line-height: 1.4;">
+                    系统将每天在上述时间点自动执行“拉取帖子 -> 加入监控”任务。
+                </p>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeAutoMonitorModal()" style="min-width: 100px;">关闭</button>
+            <button class="btn btn-primary" id="btn-save-auto-monitor-config" style="min-width: 120px;">保存设置</button>
         </div>
     </div>
 </div>

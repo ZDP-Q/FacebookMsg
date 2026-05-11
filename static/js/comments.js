@@ -310,9 +310,44 @@ window.deleteSinglePost = async function(postId) {
     }
 }
 
+async function checkOngoingSync() {
+    try {
+        const res = await fetch('/api/sync/status?task=post_sync');
+        const data = await res.json();
+        
+        if (data && !data.done) {
+            // Restore UI state
+            showProgress(data.msg || "正在同步...");
+            updateProgress(data.percent || 0, data.msg);
+            
+            // Start polling until done
+            const timer = setInterval(async () => {
+                const r = await fetch('/api/sync/status?task=post_sync');
+                const d = await r.json();
+                if (!d || d.done) {
+                    clearInterval(timer);
+                    if (d && !d.error) {
+                        updateProgress(100, "同步已在后台完成");
+                        showAlert('同步已完成，正在刷新页面...', 'success');
+                        setTimeout(() => location.reload(), 1000);
+                    } else if (d && d.error) {
+                        hideProgress();
+                        showAlert(d.msg || '同步失败', 'error');
+                    }
+                } else {
+                    updateProgress(d.percent || 0, d.msg);
+                }
+            }, 2000);
+        }
+    } catch (err) {
+        console.error('Failed to check sync status:', err);
+    }
+}
+
 /* Initialize everything after DOM load */
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. 同步帖子 (筛选栏)
+    checkOngoingSync();
+    // ... (rest of the initializers)
     document.getElementById('btn-sync-custom')?.addEventListener('click', () => {
         const limit = parseInt(document.getElementById('sync-limit')?.value || '20', 10);
         const since = document.getElementById('sync-since')?.value?.trim() || '';

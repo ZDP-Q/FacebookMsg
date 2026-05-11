@@ -7,6 +7,7 @@ from typing import Any
 from app.config import AppConfig
 from app.repositories import replace_comments_for_post, upsert_page_profile, upsert_post, list_posts, get_canonical_page_id
 from app.services.facebook import FacebookService
+from app.registry import update_task_status
 
 
 logger = logging.getLogger("uvicorn.error")
@@ -26,70 +27,94 @@ class SyncService:
         return final_result
 
     async def sync_all_gen(self, *, post_limit: int = 20, since: str = "", until: str = "", all_posts: bool = False):
+        """Progress generator for SSE. It starts the background worker if not already running."""
+        from app.registry import get_task_status
+        current = get_task_status("post_sync")
+        
+        if not current or current.get("done"):
+            asyncio.create_task(self._run_sync_worker(post_limit, since, until, all_posts))
+            await asyncio.sleep(0.1)
+
+        last_update = 0
+        while True:
+            status = get_task_status("post_sync")
+            if not status: break
+            
+            if status.get("updated_at", 0) > last_update:
+                yield status
+                last_update = status.get("updated_at", 0)
+            
+            if status.get("done"): break
+            await asyncio.sleep(1)
+
+    async def _run_sync_worker(self, post_limit: int, since: str, until: str, all_posts: bool):
         if self.config.page_id == "default-page":
-            logger.warning("[sync] Skipping sync for 'default-page' as it is a placeholder.")
-            yield {"percent": 0, "status": "skipped", "reason": "default-page"}
+            logger.warning("[sync] Skipping sync for 'default-page'.")
+            update_task_status("post_sync", {"msg": "跳过默认页面", "done": True, "percent": 0})
             return
 
-        yield {"percent": 5, "status": "正在获取主页基本信息..."}
-        profile = await self.facebook.fetch_page_profile()
-        upsert_page_profile(profile)
-        
-        canonical_page_id = str(profile.get("id", ""))
-        normalized_all_posts = all_posts or post_limit <= 0
-        
-        yield {"percent": 15, "status": f"正在获取帖子列表 (limit={post_limit if not normalized_all_posts else '全部'})..."}
-        raw_posts, next_cursor = await self._fetch_posts_for_sync(
-            canonical_page_id=canonical_page_id,
-            post_limit=post_limit,
-            since=since,
-            until=until,
-            all_posts=normalized_all_posts,
-        )
-        
-        posts = []
-        for post in raw_posts:
-            if self._is_post_from_current_page(post, canonical_page_id):
-                posts.append(post)
-
-        total_posts = len(posts)
-        if not posts:
-            yield {"percent": 100, "status": "同步完成，未发现新帖子"}
-            yield {"status": "completed", "result": {"page_id": canonical_page_id, "post_count": 0, "comment_count": 0}}
-            return
-
-        yield {"percent": 25, "status": f"发现 {total_posts} 篇帖子，开始同步媒体信息和评论..."}
-
-        # 分步处理帖子，以提供更细粒度的进度
-        synced_comment_count = 0
-        batch_size = 5
-        processed_count = 0
-
-        for i in range(0, total_posts, batch_size):
-            batch = posts[i : i + batch_size]
+        try:
+            update_task_status("post_sync", {"msg": "正在获取主页基本信息...", "percent": 5, "done": False})
+            profile = await self.facebook.fetch_page_profile()
+            upsert_page_profile(profile)
             
-            # 同步媒体信息
-            await asyncio.gather(*[self._sync_post_media(canonical_page_id, p) for p in batch])
+            canonical_page_id = str(profile.get("id", ""))
+            normalized_all_posts = all_posts or post_limit <= 0
             
-            # 同步评论
-            counts = await asyncio.gather(*[self._sync_post_comments(p) for p in batch])
-            synced_comment_count += sum(counts)
+            status_msg = f"正在获取帖子列表 (limit={post_limit if not normalized_all_posts else '全部'})..."
+            update_task_status("post_sync", {"msg": status_msg, "percent": 15, "done": False})
             
-            processed_count += len(batch)
-            percent = 25 + int((processed_count / total_posts) * 70) # 25% -> 95%
-            yield {"percent": percent, "status": f"已处理 {processed_count}/{total_posts} 篇帖子..."}
+            raw_posts, next_cursor = await self._fetch_posts_for_sync(
+                canonical_page_id=canonical_page_id,
+                post_limit=post_limit,
+                since=since,
+                until=until,
+                all_posts=normalized_all_posts,
+            )
+            
+            posts = []
+            for post in raw_posts:
+                if self._is_post_from_current_page(post, canonical_page_id):
+                    posts.append(post)
 
-        yield {"percent": 100, "status": "同步完成！"}
-        yield {
-            "status": "completed",
-            "result": {
-                "page_id": canonical_page_id,
-                "post_count": total_posts,
-                "comment_count": synced_comment_count,
-                "next_cursor": next_cursor,
-                "all_posts": normalized_all_posts,
-            }
-        }
+            total_posts = len(posts)
+            if not posts:
+                update_task_status("post_sync", {"msg": "同步完成，未发现新帖子", "percent": 100, "done": True})
+                return
+
+            status_msg = f"发现 {total_posts} 篇帖子，开始同步媒体信息和评论..."
+            update_task_status("post_sync", {"msg": status_msg, "percent": 25, "done": False})
+
+            synced_comment_count = 0
+            batch_size = 5
+            processed_count = 0
+
+            for i in range(0, total_posts, batch_size):
+                batch = posts[i : i + batch_size]
+                await asyncio.gather(*[self._sync_post_media(canonical_page_id, p) for p in batch])
+                counts = await asyncio.gather(*[self._sync_post_comments(p) for p in batch])
+                synced_comment_count += sum(counts)
+                
+                processed_count += len(batch)
+                percent = 25 + int((processed_count / total_posts) * 70)
+                status_msg = f"已处理 {processed_count}/{total_posts} 篇帖子..."
+                update_task_status("post_sync", {"msg": status_msg, "percent": percent, "done": False})
+
+            update_task_status("post_sync", {
+                "msg": "同步完成！", 
+                "percent": 100, 
+                "done": True,
+                "result": {
+                    "page_id": canonical_page_id,
+                    "post_count": total_posts,
+                    "comment_count": synced_comment_count,
+                    "next_cursor": next_cursor,
+                    "all_posts": normalized_all_posts,
+                }
+            })
+        except Exception as e:
+            logger.error("[sync] Background worker failed: %s", e, exc_info=True)
+            update_task_status("post_sync", {"msg": f"同步失败: {str(e)}", "done": True, "error": True})
 
     async def sync_post(self, post_id: str) -> dict[str, Any]:
         if self.config.page_id == "default-page":

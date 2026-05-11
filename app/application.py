@@ -117,7 +117,7 @@ def create_app() -> FastAPI:
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         # 兼容现有模板中大量 onclick 内联事件，避免交互失效。
         # 后续可改造成纯外链脚本事件绑定后再移除 'unsafe-inline'。
-        response.headers["Content-Security-Policy"] = "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https:; connect-src 'self' https:; frame-ancestors 'none'; base-uri 'self'"
         if path.startswith("/api") or path.startswith("/login"):
             response.headers["Cache-Control"] = "no-store"
         return response

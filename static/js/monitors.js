@@ -364,6 +364,148 @@ async function loadActivePersona() {
 document.addEventListener('DOMContentLoaded', async () => {
     loadActivePersona();
 
+    // Auto-monitor modal
+    const autoMonitorModal = document.getElementById('auto-monitor-modal');
+    
+    document.getElementById('btn-auto-monitor-settings')?.addEventListener('click', async () => {
+        autoMonitorModal.classList.add('open');
+        await loadAutoMonitorSettings();
+    });
+
+    window.closeAutoMonitorModal = function() {
+        autoMonitorModal.classList.remove('open');
+    };
+
+    autoMonitorModal?.addEventListener('click', (e) => {
+        if (e.target === autoMonitorModal) closeAutoMonitorModal();
+    });
+
+    async function loadAutoMonitorSettings(options = { updateConfig: true, updateSchedules: true }) {
+        try {
+            const r = await fetch('/api/auto-monitor/settings');
+            if (!r.ok) throw new Error('获取设置失败');
+            const data = await r.json();
+            
+            if (options.updateConfig) {
+                const enabledEl = document.getElementById('auto-monitor-enabled');
+                const maxPostsEl = document.getElementById('auto-monitor-max-posts');
+                if (enabledEl) enabledEl.checked = !!data.config.enabled;
+                if (maxPostsEl) maxPostsEl.value = data.config.max_posts;
+            }
+            
+            if (options.updateSchedules) {
+                renderSchedules(data.schedules);
+            }
+        } catch (e) {
+            showAlert(e.message, 'error');
+        }
+    }
+
+    function renderSchedules(schedules) {
+        const list = document.getElementById('auto-monitor-schedules-list');
+        if (!list) return;
+        
+        if (!schedules.length) {
+            list.innerHTML = '<p class="text-xs text-muted" style="padding: 10px 0;">尚未添加触发时间。</p>';
+            return;
+        }
+        
+        list.innerHTML = schedules.map(s => `
+            <div class="alarm-row" style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background: var(--surface-3); border-radius: 8px; margin-bottom: 8px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 600; color: var(--text-main); opacity: ${s.enabled ? '1' : '0.4'}">${escHtml(s.trigger_time)}</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 16px;">
+                    <label class="switch">
+                        <input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="toggleAutoMonitorSchedule(${s.id}, this.checked)">
+                        <span class="slider"></span>
+                    </label>
+                    <span class="remove-btn" title="删除" onclick="deleteSchedule(${s.id})" style="cursor: pointer; font-size: 14px; opacity: 0.5;">✕</span>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    window.toggleAutoMonitorSchedule = async function(id, enabled) {
+        try {
+            const r = await fetch(`/api/auto-monitor/schedules/${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled }),
+            });
+            if (!r.ok) throw new Error('操作失败');
+            // Refresh list to apply visual styles (like opacity)
+            await loadAutoMonitorSettings({ updateConfig: false, updateSchedules: true });
+        } catch (e) {
+            showAlert(e.message, 'error');
+        }
+    };
+
+    // Auto-save global toggle
+    document.getElementById('auto-monitor-enabled')?.addEventListener('change', async (e) => {
+        const enabled = e.target.checked;
+        try {
+            await fetch('/api/auto-monitor/config', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled }),
+            });
+            // showAlert('设置已自动保存', 'success');
+        } catch (e) {
+            showAlert(e.message, 'error');
+        }
+    });
+
+    document.getElementById('btn-save-auto-monitor-config')?.addEventListener('click', async () => {
+        const enabled = document.getElementById('auto-monitor-enabled').checked;
+        const maxPosts = parseInt(document.getElementById('auto-monitor-max-posts').value || '10');
+        const btn = document.getElementById('btn-save-auto-monitor-config');
+        btn.disabled = true;
+        try {
+            const r = await fetch('/api/auto-monitor/config', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled, max_posts: maxPosts }),
+            });
+            if (!r.ok) throw new Error('保存失败');
+            showAlert('自动监控基本设置已保存。', 'success');
+        } catch (e) {
+            showAlert(e.message, 'error');
+        } finally {
+            btn.disabled = false;
+        }
+    });
+
+    document.getElementById('btn-add-schedule')?.addEventListener('click', async () => {
+        const timeInput = document.getElementById('new-schedule-time');
+        const trigger_time = timeInput.value;
+        if (!trigger_time) { showAlert('请选择时间。', 'warning'); return; }
+        try {
+            const r = await fetch('/api/auto-monitor/schedules', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ trigger_time }),
+            });
+            if (!r.ok) throw new Error('添加失败');
+            timeInput.value = '';
+            // Only update schedules, don't overwrite current unsaved config toggle
+            await loadAutoMonitorSettings({ updateConfig: false, updateSchedules: true });
+        } catch (e) {
+            showAlert(e.message, 'error');
+        }
+    });
+
+    window.deleteSchedule = async function(id) {
+        try {
+            const r = await fetch(`/api/auto-monitor/schedules/${id}`, { method: 'DELETE' });
+            if (!r.ok) throw new Error('删除失败');
+            // Only update schedules, don't overwrite current unsaved config toggle
+            await loadAutoMonitorSettings({ updateConfig: false, updateSchedules: true });
+        } catch (e) {
+            showAlert(e.message, 'error');
+        }
+    };
+
     // Batch Actions Event Listeners
     document.getElementById('select-all-monitors')?.addEventListener('change', (e) => {
         const checked = e.target.checked;

@@ -243,3 +243,32 @@ class FacebookService:
         result = await self._request("DELETE", comment_id)
         return bool(result)
 
+    async def fetch_conversations(self, limit: int = 50, after: str = "", since: str = "", page_id: str | None = None, folder: str = "inbox") -> dict[str, Any]:
+        """Fetch list of conversations for a page, specifying folder."""
+        target = page_id or "me"
+        params = {
+            "fields": "id,updated_time,unread_count,participants",
+            "limit": min(limit, 100),
+            "folder": folder
+        }
+
+        if after:
+            params["after"] = after
+        if since:
+            params["since"] = since
+        
+        return await self._request("GET", f"{target}/conversations", params=params)
+
+    async def fetch_messages(self, conversation_id: str, limit: int = 50, after: str = "", since: str = "") -> dict[str, Any]:
+        """Fetch messages within a specific conversation."""
+        params = {
+            "fields": "id,message,from,created_time,attachments,sticker",
+            "limit": min(limit, 100),
+        }
+        if after:
+            params["after"] = after
+        if since:
+            params["since"] = since
+            
+        return await self._request("GET", f"{conversation_id}/messages", params=params)
+

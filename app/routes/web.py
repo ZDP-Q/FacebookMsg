@@ -127,3 +127,7 @@ async def monitors_page(request: Request):
             "monitored_post_ids": monitored_post_ids,
         },
     )
+
+@router.get("/chats", response_class=HTMLResponse)
+async def chats_page(request: Request):
+    return templates.TemplateResponse("chat_dashboard.html", {"request": request})

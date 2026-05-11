@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+
+{% block title %}私信管理{% endblock %}
+{% block nav_chats %}active{% endblock %}
+
+{% block head %}
+<script src="/static/js/echarts.min.js"></script>
+<style>
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+    .stat-card {
+        background: var(--surface-1);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+        transition: transform 0.2s;
+    }
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-sm);
+    }
+    .stat-value {
+        font-size: 28px;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 4px;
+    }
+    .stat-label {
+        font-size: 13px;
+        color: var(--text-muted);
+        font-weight: 500;
+    }
+    .chart-container {
+        background: var(--surface-1);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+        height: 500px;
+        margin-bottom: 24px;
+    }
+    .sync-progress-wrap {
+        margin-bottom: 24px;
+        display: none;
+    }
+    .progress-bar {
+        background: var(--surface-3);
+        height: 12px;
+        border-radius: 6px;
+        overflow: hidden;
+        margin-top: 8px;
+    }
+    .progress-fill {
+        background: var(--accent);
+        height: 100%;
+        width: 0%;
+        transition: width 0.3s ease;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1 class="page-title">私信管理 Dashboard</h1>
+        <p class="page-subtitle">分析公共主页的私信互动数据与用户活跃度。</p>
+    </div>
+    <div class="page-actions">
+        <div style="display: flex; gap: 8px;">
+            <button class="btn btn-primary" id="btn-sync-chats">增量同步私信</button>
+            <button class="btn btn-outline" id="btn-full-sync-chats" style="border: 1px solid var(--border); background: transparent; color: var(--text-muted);">全量强制同步</button>
+        </div>
+    </div>
+</div>
+
+<div id="chat-alert" class="alert"></div>
+
+<div class="sync-progress-wrap" id="sync-progress-wrap">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span class="text-sm fw-600" id="sync-status">正在同步...</span>
+        <span class="text-xs text-muted" id="sync-detail"></span>
+    </div>
+    <div class="progress-bar">
+        <div class="progress-fill" id="sync-progress-fill"></div>
+    </div>
+</div>
+
+<div class="stats-grid" id="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value" id="stat-total-users">-</div>
+        <div class="stat-label">总私聊用户</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-total-messages">-</div>
+        <div class="stat-label">总消息条数</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-longest-msg">-</div>
+        <div class="stat-label">最长聊天链 (条)</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-longest-duration">-</div>
+        <div class="stat-label">最长持续 (天)</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-max-streak">-</div>
+        <div class="stat-label">最大连续天数 (Streak)</div>
+    </div>
+</div>
+
+<style>
+    .detailed-stats-wrap {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+        margin-bottom: 24px;
+    }
+    .stats-table-card {
+        background: var(--surface-1);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+    }
+    .stats-table-card h3 {
+        font-size: 16px;
+        margin-bottom: 16px;
+        color: var(--text);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .stats-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .stats-table th, .stats-table td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid var(--border);
+    }
+    .stats-table th {
+        color: var(--text-muted);
+        font-weight: 500;
+        font-size: 13px;
+        width: 40%;
+    }
+    .stats-table td {
+        font-weight: 600;
+        color: var(--text);
+    }
+    .stats-table tr:last-child td, .stats-table tr:last-child th {
+        border-bottom: none;
+    }
+    .stat-highlight {
+        color: var(--accent) !important;
+    }
+</style>
+
+<div class="detailed-stats-wrap">
+    <div class="stats-table-card">
+        <h3>📊 用户消息数统计 (Message Counts)</h3>
+        <table class="stats-table">
+            <tr><th>最大值 (Max)</th><td id="msg-max" class="stat-highlight">-</td></tr>
+            <tr><th>最小值 (Min)</th><td id="msg-min">-</td></tr>
+            <tr><th>平均值 (Avg)</th><td id="msg-avg">-</td></tr>
+            <tr><th>中位数 (Median)</th><td id="msg-median">-</td></tr>
+            <tr><th>P99 (Top 1%)</th><td id="msg-p99">-</td></tr>
+            <tr><th>P95 (Top 5%)</th><td id="msg-p95">-</td></tr>
+            <tr><th>P90 (Top 10%)</th><td id="msg-p90">-</td></tr>
+            <tr><th>P80 (Top 20%)</th><td id="msg-p80">-</td></tr>
+        </table>
+    </div>
+    <div class="stats-table-card">
+        <h3>📈 用户活跃天数分布 (Active Days Dist)</h3>
+        <table class="stats-table">
+            <tr><th>最大值 (Max)</th><td id="active-days-max" class="stat-highlight">-</td></tr>
+            <tr><th>平均值 (Avg)</th><td id="active-days-avg">-</td></tr>
+            <tr><th>中位数 (Median)</th><td id="active-days-median">-</td></tr>
+            <tr><th>P99 (Top 1%)</th><td id="active-days-p99">-</td></tr>
+            <tr><th>P95 (Top 5%)</th><td id="active-days-p95">-</td></tr>
+            <tr><th>P90 (Top 10%)</th><td id="active-days-p90">-</td></tr>
+            <tr><th>P80 (Top 20%)</th><td id="active-days-p80">-</td></tr>
+        </table>
+    </div>
+    <div class="stats-table-card" style="grid-column: span 2;">
+        <h3>🔥 连续互动天数分层统计 (Tiered Streak Stats)</h3>
+        <table class="stats-table">
+            <thead>
+                <tr>
+                    <th>用户分层 (按消息量)</th>
+                    <th>最大连续 (Max)</th>
+                    <th>最短连续 (Min)</th>
+                    <th>平均连续 (Avg)</th>
+                    <th>中位数 (Median)</th>
+                </tr>
+            </thead>
+            <tbody id="streak-tiered-body">
+                <!-- Data will be injected here -->
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="stats-table-card" style="grid-column: span 3; min-height: 450px;">
+        <h3>📊 用户消息总量排名图 (Message Count Ranking)</h3>
+        <div id="all-msg-ranking-chart" style="width: 100%; height: 400px;"></div>
+    </div>
+
+    <div class="stats-table-card" style="grid-column: span 3; min-height: 450px;">
+        <h3>📊 全部用户活跃天数分布图 (Frequency of Active Days)</h3>
+        <div id="all-streak-chart" style="width: 100%; height: 400px;"></div>
+    </div>
+
+    <div class="stats-table-card" style="grid-column: span 3;">
+        <h3>📊 各分层用户活跃天数分布图 (P99 - P80)</h3>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
+            <div style="min-height: 350px;">
+                <h4 style="text-align: center; margin-bottom: 10px;">Top 1% (P99)</h4>
+                <div id="p99-streak-chart" style="width: 100%; height: 300px;"></div>
+            </div>
+            <div style="min-height: 350px;">
+                <h4 style="text-align: center; margin-bottom: 10px;">Top 5% (P95)</h4>
+                <div id="p95-streak-chart" style="width: 100%; height: 300px;"></div>
+            </div>
+            <div style="min-height: 350px;">
+                <h4 style="text-align: center; margin-bottom: 10px;">Top 10% (P90)</h4>
+                <div id="p90-streak-chart" style="width: 100%; height: 300px;"></div>
+            </div>
+            <div style="min-height: 350px;">
+                <h4 style="text-align: center; margin-bottom: 10px;">Top 20% (P80)</h4>
+                <div id="p80-streak-chart" style="width: 100%; height: 300px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/chat_dashboard.js"></script>
+{% endblock %}

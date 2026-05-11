@@ -139,6 +139,45 @@ CREATE TABLE IF NOT EXISTS admin_login_attempts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_admin_login_lock_until ON admin_login_attempts(lock_until);
+
+CREATE TABLE IF NOT EXISTS auto_monitor_configs (
+    id INTEGER PRIMARY KEY CHECK(id = 1),
+    enabled INTEGER NOT NULL DEFAULT 0,
+    max_posts INTEGER NOT NULL DEFAULT 10,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS auto_monitor_schedules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trigger_time TEXT NOT NULL UNIQUE, -- HH:MM format
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_triggered_at TEXT -- YYYY-MM-DD HH:MM
+);
+
+CREATE TABLE IF NOT EXISTS page_conversations (
+    id TEXT PRIMARY KEY,
+    page_id TEXT NOT NULL,
+    updated_time TEXT,
+    unread_count INTEGER DEFAULT 0,
+    participants_json TEXT,
+    synced_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (page_id) REFERENCES page_profiles(page_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS conversation_messages (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    message_text TEXT,
+    sender_id TEXT,
+    sender_name TEXT,
+    created_time TEXT,
+    synced_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (conversation_id) REFERENCES page_conversations(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_conv_page ON page_conversations(page_id);
+CREATE INDEX IF NOT EXISTS idx_msg_conv ON conversation_messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_msg_time ON conversation_messages(created_time);
 """
 
 
@@ -177,8 +216,21 @@ def init_db() -> None:
         except Exception:
             pass
 
+        try:
+            connection.execute("ALTER TABLE auto_monitor_schedules ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1")
+        except Exception:
+            pass
+
+    _seed_auto_monitor_config_if_needed()
     _seed_settings_from_legacy_json_if_needed()
     _seed_admin_auth_if_needed()
+
+
+def _seed_auto_monitor_config_if_needed() -> None:
+    with get_connection() as connection:
+        connection.execute(
+            "INSERT OR IGNORE INTO auto_monitor_configs (id, enabled, max_posts) VALUES (1, 0, 10)"
+        )
 
 
 def _seed_settings_from_legacy_json_if_needed() -> None:

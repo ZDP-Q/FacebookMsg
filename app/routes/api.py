@@ -35,10 +35,20 @@ from app.repositories import (
     get_admin_auth,
     update_admin_password,
     delete_all_admin_sessions,
+    get_auto_monitor_config,
+    update_auto_monitor_config,
+    list_auto_monitor_schedules,
+    add_auto_monitor_schedule,
+    delete_auto_monitor_schedule,
+    update_auto_monitor_schedule,
+    get_chat_dashboard_stats,
+    get_user_message_counts,
+    get_chat_detailed_stats,
 )
 from app.services.ai_reply import AIReplyService
 from app.services.facebook import FacebookService
 from app.services.sync import SyncService
+from app.services.chat_sync import ChatSyncService
 from app.security import PBKDF2_ITERATIONS, generate_salt, hash_password, is_strong_password, verify_password
 
 router = APIRouter(prefix="/api")
@@ -60,6 +70,19 @@ class UpdateMonitorPayload(BaseModel):
 
 class BulkDeleteMonitorPayload(BaseModel):
     ids: list[int]
+
+
+class UpdateAutoMonitorConfigPayload(BaseModel):
+    enabled: bool | None = None
+    max_posts: int | None = None
+
+
+class AddAutoMonitorSchedulePayload(BaseModel):
+    trigger_time: str  # HH:MM
+
+
+class UpdateAutoMonitorSchedulePayload(BaseModel):
+    enabled: bool
 
 
 class AccountPayload(BaseModel):
@@ -555,6 +578,96 @@ async def list_replied_api(monitor_id: int, limit: int = 50):
         raise HTTPException(status_code=404, detail="监控不存在")
     _assert_monitor_belongs_to_active_page(monitor)
     return list_replied_for_monitor(monitor_id, limit=limit)
+
+
+# --- Chat (Private Message) Endpoints ---
+
+@router.get("/chats/stats")
+async def get_chat_stats_api():
+    config = load_config()
+    page_id = get_canonical_page_id(config.page_id)
+    stats = get_chat_dashboard_stats(page_id)
+    detailed_stats = get_chat_detailed_stats(page_id)
+    return {
+        "stats": stats,
+        "detailed_stats": detailed_stats
+    }
+
+
+from app.registry import get_task_status
+
+@router.get("/sync/status")
+async def get_sync_status_api(task: str):
+    """Query current progress of a specific sync task."""
+    status = get_task_status(task)
+    return status or {"msg": "No active task", "done": True}
+
+
+@router.get("/chats/sync")
+async def sync_chats_api(full: bool = False):
+    config = load_config()
+    page_id = get_canonical_page_id(config.page_id)
+    fb_service = FacebookService(config)
+    sync_service = ChatSyncService(fb_service)
+    
+    return StreamingResponse(
+        sync_service.sync_all_chats(page_id, full_sync=full),
+        media_type="text/event-stream"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Auto-monitor
+# ---------------------------------------------------------------------------
+
+@router.get("/auto-monitor/settings")
+async def get_auto_monitor_settings_api():
+    return {
+        "config": get_auto_monitor_config(),
+        "schedules": list_auto_monitor_schedules(),
+    }
+
+
+@router.patch("/auto-monitor/config")
+async def update_auto_monitor_config_api(payload: UpdateAutoMonitorConfigPayload):
+    kwargs = {}
+    if payload.enabled is not None:
+        kwargs["enabled"] = 1 if payload.enabled else 0
+    if payload.max_posts is not None:
+        kwargs["max_posts"] = max(1, payload.max_posts)
+    
+    update_auto_monitor_config(**kwargs)
+    return {"status": "success"}
+
+
+@router.post("/auto-monitor/schedules")
+async def add_auto_monitor_schedule_api(payload: AddAutoMonitorSchedulePayload):
+    # Validate HH:MM
+    import re
+    if not re.match(r"^\d{2}:\d{2}$", payload.trigger_time):
+        raise HTTPException(status_code=400, detail="时间格式必须为 HH:MM")
+    
+    try:
+        h, m = map(int, payload.trigger_time.split(":"))
+        if h < 0 or h > 23 or m < 0 or m > 59:
+            raise ValueError()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="时间数值不合法")
+
+    add_auto_monitor_schedule(payload.trigger_time)
+    return {"status": "success"}
+
+
+@router.patch("/auto-monitor/schedules/{schedule_id}")
+async def update_auto_monitor_schedule_api(schedule_id: int, payload: UpdateAutoMonitorSchedulePayload):
+    update_auto_monitor_schedule(schedule_id, enabled=(1 if payload.enabled else 0))
+    return {"status": "success"}
+
+
+@router.delete("/auto-monitor/schedules/{schedule_id}")
+async def delete_auto_monitor_schedule_api(schedule_id: int):
+    delete_auto_monitor_schedule(schedule_id)
+    return {"status": "success"}
 
 
 # ---------------------------------------------------------------------------

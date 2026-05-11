@@ -16,6 +16,12 @@ from app.repositories import (
     unmark_replied,
     update_monitor,
     upsert_comment,
+    get_auto_monitor_config,
+    list_auto_monitor_schedules,
+    mark_auto_monitor_triggered,
+    list_accounts,
+    create_monitor,
+    list_monitored_post_ids,
 )
 from app.services.ai_reply import AIReplyService
 from app.services.facebook import FacebookService
@@ -67,6 +73,8 @@ class MonitorService:
             await asyncio.sleep(_TICK_INTERVAL)
 
     async def _tick(self) -> None:
+        await self._check_auto_monitor_schedules()
+        
         monitors = list_monitors()
         now = datetime.now(timezone.utc)
         for monitor in monitors:
@@ -92,6 +100,75 @@ class MonitorService:
                 self._safe_execute(monitor),
                 name=f"monitor-{monitor_id}",
             )
+
+    async def _check_auto_monitor_schedules(self) -> None:
+        config = get_auto_monitor_config()
+        if not config.get("enabled"):
+            return
+
+        # Use system local time for comparison with user-entered "HH:MM"
+        now = datetime.now()
+        current_time_str = now.strftime("%H:%M")
+        current_minute_key = now.strftime("%Y-%m-%d %H:%M")
+
+        schedules = list_auto_monitor_schedules()
+        for schedule in schedules:
+            if not schedule.get("enabled"):
+                continue
+            if schedule["trigger_time"] == current_time_str:
+                if schedule.get("last_triggered_at") != current_minute_key:
+                    logger.info("[monitor] auto-monitor schedule triggered for %s", current_time_str)
+                    # Use a task to not block the main loop
+                    asyncio.create_task(self._run_auto_discovery(config["max_posts"]))
+                    mark_auto_monitor_triggered(schedule["id"], current_minute_key)
+
+    async def _run_auto_discovery(self, max_posts: int) -> None:
+        logger.info("[monitor] starting auto post discovery (max_posts=%s)", max_posts)
+        accounts = list_accounts()
+        for account in accounts:
+            # We check for page_access_token to ensure account is somewhat valid
+            if not account.get("page_access_token"):
+                continue
+            
+            try:
+                page_id = account["page_id"]
+                from app.services.sync import SyncService
+                from app.config import load_config
+                
+                cfg = load_config(account_id=account["id"])
+                sync_svc = SyncService(cfg)
+                
+                # Fetch recent posts (limit 15 for discovery)
+                logger.info("[monitor] auto-discovery: fetching posts for account %s (%s)", account["name"], page_id)
+                async for step in sync_svc.sync_all_gen(post_limit=15):
+                    pass
+                
+                # After sync, get all post IDs for this page and their monitor status
+                from app.repositories import list_posts
+                posts = list_posts(page_id=page_id, limit=30)
+                monitored_ids = list_monitored_post_ids(page_id)
+                
+                current_monitor_count = len(monitored_ids)
+                if current_monitor_count >= max_posts:
+                    logger.info("[monitor] account %s already has %s monitors (limit %s), skipping discovery", 
+                                account["name"], current_monitor_count, max_posts)
+                    continue
+                
+                newly_added = 0
+                for post in posts:
+                    if post["id"] not in monitored_ids:
+                        create_monitor(post["id"], interval_seconds=300)
+                        monitored_ids.add(post["id"])
+                        newly_added += 1
+                        current_monitor_count += 1
+                        if current_monitor_count >= max_posts:
+                            break
+                
+                if newly_added > 0:
+                    logger.info("[monitor] account %s: automatically added %s new monitors", account["name"], newly_added)
+                
+            except Exception as exc:
+                logger.error("[monitor] auto-discovery failed for account %s: %s", account.get("name"), exc)
 
     async def _safe_execute(self, monitor: dict[str, Any]) -> None:
         monitor_id = monitor["id"]
