@@ -9,9 +9,9 @@ services:
       - "38000:38000"
     environment:
       - TZ=Asia/Shanghai
-      - http_proxy=http://172.24.80.1:7897
-      - https_proxy=http://172.24.80.1:7897
-      - no_proxy=localhost,127.0.0.1
+      - http_proxy=${HTTP_PROXY:-}
+      - https_proxy=${HTTPS_PROXY:-}
+      - no_proxy=${NO_PROXY:-localhost,127.0.0.1}
     volumes:
       # 持久化数据库
       - ../data:/app/data
