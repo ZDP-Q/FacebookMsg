@@ -345,6 +345,13 @@ async def sync_data_stream(limit: int = 0, since: str = "", until: str = "", all
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
+@router.post("/sync/stop")
+async def stop_sync():
+    from app.registry import update_task_status
+    update_task_status("post_sync", {"done": True, "msg": "用户手动停止同步", "error": True, "percent": 0})
+    return {"status": "stopped"}
+
+
 @router.post("/sync/posts/{post_id}")
 async def sync_single_post_api(post_id: str):
     config = load_config()

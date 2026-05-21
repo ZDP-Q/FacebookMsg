@@ -94,6 +94,13 @@ class SyncService:
             processed_count = 0
 
             for i in range(0, total_posts, batch_size):
+                # 检查是否被用户手动停止
+                from app.registry import get_task_status
+                current = get_task_status("post_sync")
+                if current and current.get("done"):
+                    logger.info("[sync] sync stopped by user")
+                    return
+
                 batch = posts[i : i + batch_size]
                 await asyncio.gather(*[self._sync_post_media(canonical_page_id, p) for p in batch])
                 if sync_comments:

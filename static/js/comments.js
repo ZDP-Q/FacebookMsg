@@ -235,9 +235,12 @@ window.addMonitor = async function(postId, btn) {
     }
 }
 
+let currentEventSource = null;
+
 async function doSync(limit, since, until, allPosts = false, syncComments = true) {
     showAlert(`开始同步任务...`, 'info');
     showProgress("正在准备同步帖子...");
+    setSyncButtonsDisabled(true);
 
     const params = new URLSearchParams({
         limit: limit.toString(),
@@ -246,37 +249,53 @@ async function doSync(limit, since, until, allPosts = false, syncComments = true
     });
     if (since) params.append('since', since);
     if (until) params.append('until', until);
-    
+
     const eventSource = new EventSource(`/api/sync/stream?${params.toString()}`);
-    
+    currentEventSource = eventSource;
+
     eventSource.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data.error) {
             eventSource.close();
+            currentEventSource = null;
             hideProgress();
+            setSyncButtonsDisabled(false);
             showAlert(data.error, 'error');
             return;
         }
-        
+
         if (data.percent !== undefined) {
             updateProgress(data.percent, data.msg);
         }
 
         if (data.done) {
             eventSource.close();
+            currentEventSource = null;
+            setSyncButtonsDisabled(false);
             updateProgress(100, "同步成功！");
             showAlert('同步完成，正在刷新页面...', 'success');
             setTimeout(() => location.reload(), 800);
         }
     };
-    
+
     eventSource.onerror = (e) => {
         eventSource.close();
+        currentEventSource = null;
+        setSyncButtonsDisabled(false);
         // 如果已经 100% 或者是 completed 状态，忽略错误
         if (progressPercent && progressPercent.textContent === "100%") return;
         hideProgress();
         showAlert("同步过程中连接中断，请重试。", 'error');
     };
+}
+
+function setSyncButtonsDisabled(disabled) {
+    const btnSync = document.getElementById('btn-sync-custom');
+    const btnComments = document.getElementById('btn-sync-comments');
+    const btnStop = document.getElementById('btn-stop-sync');
+    if (btnSync) btnSync.disabled = disabled;
+    if (btnComments) btnComments.disabled = disabled;
+    if (btnStop) btnStop.style.display = disabled ? 'inline-flex' : 'none';
 }
 
 function updateSelectedCount() {
@@ -315,18 +334,20 @@ async function checkOngoingSync() {
     try {
         const res = await fetch('/api/sync/status?task=post_sync');
         const data = await res.json();
-        
+
         if (data && !data.done) {
             // Restore UI state
             showProgress(data.msg || "正在同步...");
             updateProgress(data.percent || 0, data.msg);
-            
+            setSyncButtonsDisabled(true);
+
             // Start polling until done
             const timer = setInterval(async () => {
                 const r = await fetch('/api/sync/status?task=post_sync');
                 const d = await r.json();
                 if (!d || d.done) {
                     clearInterval(timer);
+                    setSyncButtonsDisabled(false);
                     if (d && !d.error) {
                         updateProgress(100, "同步已在后台完成");
                         showAlert('同步已完成，正在刷新页面...', 'success');
@@ -362,6 +383,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const since = document.getElementById('sync-since')?.value?.trim() || '';
         const until = document.getElementById('sync-until')?.value?.trim() || '';
         doSync(limit, since, until, false, true);
+    });
+
+    // 停止同步
+    document.getElementById('btn-stop-sync')?.addEventListener('click', async () => {
+        if (currentEventSource) {
+            currentEventSource.close();
+            currentEventSource = null;
+        }
+        try {
+            await fetch('/api/sync/stop', { method: 'POST' });
+        } catch {}
+        hideProgress();
+        setSyncButtonsDisabled(false);
+        showAlert('同步已停止', 'info');
     });
 
     // 3. 全选
